@@ -22,7 +22,7 @@ A full-stack app for generating marketing assets across major social platforms.
 
 ## Run locally
 
-1. Install dependencies:
+1. Install dependencies (venv option):
 
    ```bash
    python3 -m venv .venv
@@ -30,10 +30,16 @@ A full-stack app for generating marketing assets across major social platforms.
    pip install -r requirements.txt
    ```
 
+   If your environment does not have `python3-venv`, install packages directly:
+
+   ```bash
+   python3 -m pip install --user -r requirements.txt
+   ```
+
 2. Start the app:
 
    ```bash
-   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+   python3 -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
    ```
 
 3. Open:
