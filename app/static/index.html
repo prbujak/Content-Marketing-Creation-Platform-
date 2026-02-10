@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Marketing Content Studio</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <h1>Marketing Content Studio</h1>
+        <p>
+          Generate platform-ready marketing images and 8-12 second clips from uploads
+          or existing website links.
+        </p>
+      </header>
+
+      <section class="panel">
+        <h2>Campaign Input</h2>
+        <form id="campaign-form">
+          <div class="grid two-col">
+            <label>
+              Project Name
+              <input name="project_name" type="text" placeholder="Spring Product Launch" required />
+            </label>
+
+            <label>
+              Brand Name
+              <input name="brand_name" type="text" placeholder="Acme Labs" />
+            </label>
+          </div>
+
+          <label>
+            Product / Offer Description
+            <textarea
+              name="product_description"
+              rows="4"
+              placeholder="Describe what you are promoting, who it helps, and why it matters."
+            ></textarea>
+          </label>
+
+          <div class="grid two-col">
+            <label>
+              Call to Action
+              <input name="call_to_action" type="text" value="Book a demo" />
+            </label>
+
+            <label>
+              Clip Duration (8-12 sec)
+              <div class="range-row">
+                <input id="clip-duration" name="clip_duration" type="range" min="8" max="12" value="10" />
+                <span id="clip-duration-value">10s</span>
+              </div>
+            </label>
+          </div>
+
+          <label>
+            Website URLs (one per line or comma-separated)
+            <textarea
+              id="website-links"
+              name="website_links"
+              rows="3"
+              placeholder="https://example.com
+https://another-site.com"
+            ></textarea>
+          </label>
+
+          <div class="actions">
+            <button type="button" id="analyze-links-btn">Analyze Website Links</button>
+          </div>
+
+          <fieldset class="platform-picker">
+            <legend>Target Platforms</legend>
+            <div id="platforms-container" class="platform-list"></div>
+          </fieldset>
+
+          <label>
+            Upload Source Files (images or videos)
+            <input name="files" id="files" type="file" multiple accept="image/*,video/*" />
+          </label>
+
+          <div class="actions">
+            <button type="submit" id="generate-btn">Generate Marketing Assets</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h2>Status</h2>
+        <pre id="status-box">Ready.</pre>
+      </section>
+
+      <section class="panel">
+        <h2>Website Insights</h2>
+        <div id="insights-container" class="insights"></div>
+      </section>
+
+      <section class="panel">
+        <h2>Generated Assets</h2>
+        <div id="results-container" class="results-grid"></div>
+      </section>
+    </main>
+
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
