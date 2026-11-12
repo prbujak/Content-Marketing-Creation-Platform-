@@ -47,7 +47,7 @@ def assert_public_http_url(url: str) -> str:
     return url
 
 
-USER_AGENT = "HelixBrandDNA/1.0 (+https://helix.local)"
+USER_AGENT = "eMarketsterBrandDNA/1.0 (+https://emarketster.local)"
 HEX_RE = re.compile(r"#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})\b")
 RGB_RE = re.compile(r"rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})")
 FONT_FAMILY_RE = re.compile(r"font-family\s*:\s*([^;}{]+)", re.IGNORECASE)

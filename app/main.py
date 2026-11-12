@@ -37,7 +37,7 @@ for directory in (STATIC_DIR, GENERATED_DIR, UPLOAD_DIR):
     directory.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(
-    title="Helix",
+    title="eMarketster",
     summary="Pomelli-style Business DNA + Jasper-style multi-channel campaign studio.",
 )
 app.mount("/generated", StaticFiles(directory=str(GENERATED_DIR)), name="generated")

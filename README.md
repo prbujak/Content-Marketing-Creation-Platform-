@@ -1,6 +1,6 @@
-# Helix — Brand DNA Campaign Studio
+# eMarketster — Brand DNA Campaign Studio
 
-Helix replicates the core workflows of **Google Pomelli** and **Jasper**:
+eMarketster replicates the core workflows of **Google Pomelli** and **Jasper**:
 
 1. **Business DNA** (Pomelli): paste a website URL to extract brand voice, palette, fonts, imagery, and values.
 2. **Campaign ideas** (Pomelli + Jasper): generate tailored campaign concepts or use a custom brief.

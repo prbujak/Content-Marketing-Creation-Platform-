@@ -162,7 +162,7 @@ main { position: relative; z-index: 1; }
   place-items: center;
 }
 
-.helix-orb {
+.brand-orb {
   position: relative;
   width: min(420px, 80vw);
   aspect-ratio: 1;
