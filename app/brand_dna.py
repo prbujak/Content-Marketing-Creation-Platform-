@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import colorsys
+import json
 import re
 from collections import Counter
 from datetime import datetime, timezone
@@ -192,7 +193,137 @@ def _clean_text(value: str) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
 
 
-def _extract_copy_signals(soup: BeautifulSoup) -> dict[str, Any]:
+def _domain_brand_name(url: str) -> str:
+    host = (urlparse(url).hostname or "").lower().replace("www.", "")
+    if not host:
+        return "Your Brand"
+    label = host.split(".")[0]
+    label = label.replace("-", " ").replace("_", " ").strip()
+    if not label:
+        return "Your Brand"
+    # Keep short brand tokens like "notion" / "stripe" title-cased.
+    if " " in label:
+        return " ".join(part.capitalize() for part in label.split())
+    return label[:1].upper() + label[1:]
+
+
+def _looks_like_tagline(value: str) -> bool:
+    text = _clean_text(value)
+    if not text:
+        return True
+    words = text.split()
+    if len(words) >= 5:
+        return True
+    if len(text) > 40:
+        return True
+    if text.endswith((".", "!", "?")):
+        return True
+    lowered = text.lower()
+    headline_markers = (
+        " the ", " that ", " your ", " for ", " with ", " from ", " into ",
+        " workspace ", " platform ", " software ", " help ", " make ", " build ",
+    )
+    padded = f" {lowered} "
+    if any(marker in padded for marker in headline_markers) and len(words) >= 3:
+        return True
+    return False
+
+
+def _meta_content(soup: BeautifulSoup, attrs: dict[str, str]) -> str:
+    tag = soup.find("meta", attrs=attrs)
+    if tag and tag.get("content"):
+        return _clean_text(tag["content"])
+    return ""
+
+
+def _json_ld_brand_name(soup: BeautifulSoup) -> str:
+    for script in soup.find_all("script", attrs={"type": "application/ld+json"}):
+        raw = script.string or script.get_text() or ""
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            data = json.loads(raw)
+        except Exception:
+            continue
+        stack = data if isinstance(data, list) else [data]
+        for item in stack:
+            if not isinstance(item, dict):
+                continue
+            types = item.get("@type")
+            type_names = types if isinstance(types, list) else [types]
+            type_names = [str(name).lower() for name in type_names if name]
+            if any(name in {"organization", "brand", "website", "corporation"} for name in type_names):
+                candidate = _clean_text(str(item.get("name") or item.get("legalName") or ""))
+                if candidate and not _looks_like_tagline(candidate):
+                    return candidate
+            # Nested publisher / brand blocks
+            for key in ("publisher", "brand", "organizer"):
+                nested = item.get(key)
+                if isinstance(nested, dict):
+                    candidate = _clean_text(str(nested.get("name") or ""))
+                    if candidate and not _looks_like_tagline(candidate):
+                        return candidate
+    return ""
+
+
+def _logo_alt_brand_name(soup: BeautifulSoup) -> str:
+    for img in soup.find_all("img"):
+        alt = _clean_text(img.get("alt") or "")
+        classes = " ".join(img.get("class", [])).lower()
+        src = (img.get("src") or "").lower()
+        if not alt:
+            continue
+        if "logo" in alt.lower() or "logo" in classes or "logo" in src:
+            cleaned = re.sub(r"\blogo\b", "", alt, flags=re.IGNORECASE).strip(" -|:·")
+            cleaned = _clean_text(cleaned)
+            if cleaned and not _looks_like_tagline(cleaned):
+                return cleaned
+    return ""
+
+
+def _title_brand_candidate(title: str) -> str:
+    if not title:
+        return ""
+    # Prefer left segment for "Brand | Tagline" / "Brand - Tagline" / "Brand: Tagline"
+    parts = re.split(r"\s*[|–—:\-]\s*", title)
+    parts = [part.strip() for part in parts if part.strip()]
+    if not parts:
+        return ""
+    first = parts[0]
+    if not _looks_like_tagline(first):
+        return first
+    # Sometimes title is "Tagline | Brand"
+    last = parts[-1]
+    if last != first and not _looks_like_tagline(last):
+        return last
+    return ""
+
+
+def _resolve_brand_name(soup: BeautifulSoup, page_url: str, title: str) -> str:
+    candidates = [
+        _meta_content(soup, {"property": "og:site_name"}),
+        _meta_content(soup, {"name": "application-name"}),
+        _meta_content(soup, {"name": "apple-mobile-web-app-title"}),
+        _meta_content(soup, {"name": "twitter:app:name:iphone"}),
+        _json_ld_brand_name(soup),
+        _logo_alt_brand_name(soup),
+        _title_brand_candidate(title),
+        _domain_brand_name(page_url),
+    ]
+    for candidate in candidates:
+        cleaned = _clean_text(candidate)
+        if not cleaned:
+            continue
+        if cleaned.lower() in {"home", "welcome", "website", "official site"}:
+            continue
+        if _looks_like_tagline(cleaned):
+            continue
+        return cleaned
+    return _domain_brand_name(page_url)
+
+
+def _extract_copy_signals(soup: BeautifulSoup, page_url: str = "") -> dict[str, Any]:
     title = _clean_text(soup.title.string if soup.title and soup.title.string else "")
     description = ""
     for attrs in ({"name": "description"}, {"property": "og:description"}):
@@ -230,9 +361,33 @@ def _extract_copy_signals(soup: BeautifulSoup) -> dict[str, Any]:
     secondary_tone = secondary[0][0] if secondary and secondary[0][1] > 0 else "friendly"
 
     values = headings[:4] or keywords[:4]
-    tagline = headings[0] if headings else (description[:110] if description else "Built for modern brands")
+    brand_name = _resolve_brand_name(soup, page_url, title)
 
-    brand_name = title.split("|")[0].split("-")[0].strip() if title else urlparse("").netloc
+    def _clean_tagline(value: str) -> str:
+        text = _clean_text(value)
+        if not text:
+            return ""
+        # Drop trailing/leading brand segments like "Headline | Notion".
+        parts = [part.strip() for part in re.split(r"\s*[|–—]\s*", text) if part.strip()]
+        filtered = [part for part in parts if part.lower() != brand_name.lower()]
+        text = filtered[0] if filtered else text
+        if text.lower() == brand_name.lower():
+            return ""
+        return text[:120]
+
+    # Prefer a marketing headline for tagline, not the brand name itself.
+    tagline_candidates = []
+    og_title = _clean_tagline(_meta_content(soup, {"property": "og:title"}))
+    if og_title:
+        tagline_candidates.append(og_title)
+    for heading in headings:
+        cleaned = _clean_tagline(heading)
+        if cleaned:
+            tagline_candidates.append(cleaned)
+    if description:
+        tagline_candidates.append(_clean_tagline(description[:110]) or description[:110])
+    tagline = next((item for item in tagline_candidates if item), f"{brand_name} campaigns that convert")
+
     return {
         "title": title,
         "brand_name": brand_name or "Your Brand",
@@ -323,7 +478,7 @@ def build_brand_dna(
     page_blob = response.text + "\n" + css_blob
     css_colors = _extract_colors_from_text(page_blob)
     fonts = _extract_fonts(css_blob, soup)
-    copy = _extract_copy_signals(soup)
+    copy = _extract_copy_signals(soup, final_url)
 
     image_urls = _extract_image_urls(soup, final_url)
     saved_images: list[dict[str, str]] = []
@@ -349,8 +504,8 @@ def build_brand_dna(
 
     palette = _rank_palette(css_colors, image_colors)
     brand_name = brand_name_override.strip() or copy["brand_name"]
-    if not brand_name or brand_name.lower() in {"home", "welcome"}:
-        brand_name = urlparse(final_url).netloc.replace("www.", "").split(".")[0].title()
+    if not brand_name or brand_name.lower() in {"home", "welcome"} or _looks_like_tagline(brand_name):
+        brand_name = _domain_brand_name(final_url)
 
     voice = {
         "primary_tone": copy["tone_primary"],
