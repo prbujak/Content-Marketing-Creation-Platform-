@@ -1,21 +1,31 @@
-const platformsContainer = document.getElementById("platforms-container");
-const form = document.getElementById("campaign-form");
-const generateBtn = document.getElementById("generate-btn");
-const analyzeLinksBtn = document.getElementById("analyze-links-btn");
+const state = {
+  brand: null,
+  selectedIdea: null,
+  platforms: [],
+};
+
 const statusBox = document.getElementById("status-box");
-const insightsContainer = document.getElementById("insights-container");
+const dnaForm = document.getElementById("dna-form");
+const ideasForm = document.getElementById("ideas-form");
+const campaignForm = document.getElementById("campaign-form");
+const dnaBtn = document.getElementById("dna-btn");
+const ideasBtn = document.getElementById("ideas-btn");
+const generateBtn = document.getElementById("generate-btn");
+const brandPanel = document.getElementById("brand-panel");
+const ideasGrid = document.getElementById("ideas-grid");
 const resultsContainer = document.getElementById("results-container");
+const channelPack = document.getElementById("channel-pack");
+const platformsContainer = document.getElementById("platforms-container");
 const clipDurationInput = document.getElementById("clip-duration");
 const clipDurationValue = document.getElementById("clip-duration-value");
-const websiteLinksInput = document.getElementById("website-links");
 
 function setStatus(message, isError = false) {
   statusBox.textContent = message;
   statusBox.classList.toggle("error", isError);
 }
 
-function escapeHtml(raw) {
-  return raw
+function escapeHtml(raw = "") {
+  return String(raw)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -23,184 +33,328 @@ function escapeHtml(raw) {
     .replaceAll("'", "&#39;");
 }
 
+function setStep(stepNumber) {
+  document.querySelectorAll(".step").forEach((node) => {
+    const active = Number(node.dataset.step) === stepNumber;
+    node.classList.toggle("active", active);
+    node.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  document.querySelectorAll(".stage").forEach((node) => {
+    node.classList.toggle("active", Number(node.dataset.stage) === stepNumber);
+  });
+}
+
 function renderPlatforms(platforms) {
+  state.platforms = platforms;
   platformsContainer.innerHTML = "";
-  for (const platform of platforms) {
-    const wrapper = document.createElement("label");
-    wrapper.className = "platform-option";
-    wrapper.innerHTML = `
-      <input type="checkbox" data-platform="${platform.key}" checked />
+  platforms.forEach((platform) => {
+    const label = document.createElement("label");
+    label.className = "platform-option";
+    label.innerHTML = `
+      <input type="checkbox" data-platform="${escapeHtml(platform.key)}" checked />
       <span>
         <strong>${escapeHtml(platform.label)}</strong>
         <small>${escapeHtml(platform.tone)}</small>
       </span>
     `;
-    platformsContainer.appendChild(wrapper);
-  }
+    platformsContainer.appendChild(label);
+  });
 }
 
 function selectedPlatforms() {
-  const selected = [];
-  for (const node of platformsContainer.querySelectorAll("input[type='checkbox']")) {
-    if (node.checked) {
-      selected.push(node.dataset.platform);
-    }
-  }
-  return selected;
+  return [...platformsContainer.querySelectorAll("input[type='checkbox']")]
+    .filter((node) => node.checked)
+    .map((node) => node.dataset.platform);
 }
 
-function renderInsights(insights = []) {
-  insightsContainer.innerHTML = "";
-  if (!insights.length) {
-    insightsContainer.innerHTML = "<p>No website metadata available yet.</p>";
+function renderBrand(brand) {
+  state.brand = brand;
+  brandPanel.classList.remove("hidden");
+  document.getElementById("brand-title").textContent = brand.name || "Untitled brand";
+  document.getElementById("brand-tagline").textContent = brand.tagline || "";
+  document.getElementById("brand-description").textContent = brand.description || "";
+
+  const swatches = document.getElementById("palette-swatches");
+  swatches.innerHTML = "";
+  (brand.palette?.all || []).forEach((color) => {
+    const swatch = document.createElement("span");
+    swatch.className = "swatch";
+    swatch.title = color;
+    swatch.style.background = color;
+    swatches.appendChild(swatch);
+  });
+
+  const voice = brand.voice || {};
+  document.getElementById("voice-summary").textContent =
+    `${voice.primary_tone || "professional"} · ${voice.secondary_tone || "friendly"}`;
+  const rules = document.getElementById("voice-rules");
+  rules.innerHTML = "";
+  (voice.style_rules || []).slice(0, 4).forEach((rule) => {
+    const item = document.createElement("li");
+    item.textContent = rule;
+    rules.appendChild(item);
+  });
+
+  document.getElementById("font-summary").textContent =
+    `Display: ${brand.fonts?.display || "Syne"} · Body: ${brand.fonts?.body || "Sora"}`;
+
+  const images = document.getElementById("brand-images");
+  images.innerHTML = "";
+  (brand.images || []).slice(0, 5).forEach((image) => {
+    if (!image.public_url) return;
+    const img = document.createElement("img");
+    img.src = image.public_url;
+    img.alt = `${brand.name} source`;
+    images.appendChild(img);
+  });
+}
+
+function renderIdeas(ideas = []) {
+  ideasGrid.innerHTML = "";
+  if (!ideas.length) {
+    ideasGrid.innerHTML = "<p class='muted'>No ideas yet.</p>";
     return;
   }
 
-  for (const insight of insights) {
-    const card = document.createElement("article");
-    card.className = "card";
-    const errorText = insight.error ? `<p class="error">${escapeHtml(insight.error)}</p>` : "";
-    const title = insight.title || "No title discovered";
-    const description = insight.description || "No description metadata found.";
-    card.innerHTML = `
-      <h3>${escapeHtml(insight.url || "Unknown URL")}</h3>
-      <p><strong>Title:</strong> ${escapeHtml(title)}</p>
-      <p><strong>Description:</strong> ${escapeHtml(description)}</p>
-      ${errorText}
+  ideas.forEach((idea, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "idea-card";
+    button.innerHTML = `
+      <h3>${escapeHtml(idea.title)}</h3>
+      <p>${escapeHtml(idea.angle)}</p>
+      <p><strong>Objective:</strong> ${escapeHtml(idea.objective)}</p>
+      <p><strong>Channels:</strong> ${escapeHtml(idea.channels)}</p>
     `;
-    insightsContainer.appendChild(card);
+    button.addEventListener("click", () => {
+      state.selectedIdea = idea;
+      document.querySelectorAll(".idea-card").forEach((node) => node.classList.remove("selected"));
+      button.classList.add("selected");
+      document.getElementById("campaign-title").value = idea.title;
+      document.getElementById("campaign-brief").value = idea.angle;
+      setStep(3);
+      setStatus(`Selected idea: ${idea.title}. Generate creatives when ready.`);
+    });
+    if (index === 0) button.classList.add("selected");
+    ideasGrid.appendChild(button);
+  });
+
+  state.selectedIdea = ideas[0];
+  document.getElementById("campaign-title").value = ideas[0].title;
+  document.getElementById("campaign-brief").value = ideas[0].angle;
+}
+
+function renderChannelPack(channels = {}) {
+  const content = channels.content || {};
+  if (!content || !Object.keys(content).length) {
+    channelPack.classList.add("hidden");
+    channelPack.innerHTML = "";
+    return;
   }
+
+  channelPack.classList.remove("hidden");
+  const email = content.email || {};
+  const blog = content.blog || {};
+  const ads = content.ads || {};
+  const landing = content.landing || {};
+
+  channelPack.innerHTML = `
+    <div class="channel-block">
+      <h3>Jasper Channel Pack</h3>
+      <p>${escapeHtml(content.voice || "")}</p>
+      <div class="links">
+        <a href="${channels.email_url}" target="_blank" rel="noopener">Email</a>
+        <a href="${channels.blog_url}" target="_blank" rel="noopener">Blog</a>
+        <a href="${channels.ads_url}" target="_blank" rel="noopener">Ads</a>
+        <a href="${channels.landing_url}" target="_blank" rel="noopener">Landing</a>
+      </div>
+    </div>
+    <div class="channel-block">
+      <h3>Email</h3>
+      <p><strong>Subjects:</strong> ${(email.subject_variants || []).map(escapeHtml).join(" · ")}</p>
+      <pre>${escapeHtml(email.body || "")}</pre>
+    </div>
+    <div class="channel-block">
+      <h3>Blog</h3>
+      <p><strong>${escapeHtml(blog.title || "")}</strong></p>
+      <p>${escapeHtml(blog.intro || "")}</p>
+    </div>
+    <div class="channel-block">
+      <h3>Ads + Landing</h3>
+      <p><strong>Ad headline:</strong> ${escapeHtml(ads.headline || "")}</p>
+      <p><strong>Landing hero:</strong> ${escapeHtml(landing.hero_headline || "")}</p>
+      <p>${escapeHtml(landing.hero_subhead || "")}</p>
+    </div>
+  `;
 }
 
 function renderResults(payload) {
-  const { results = [], website_sources: websiteSources = [] } = payload || {};
-  renderInsights(websiteSources);
-
+  renderChannelPack(payload.channels || {});
   resultsContainer.innerHTML = "";
+  const results = payload.results || [];
   if (!results.length) {
-    resultsContainer.innerHTML = "<p>No assets were generated.</p>";
+    resultsContainer.innerHTML = "<p class='muted'>No creatives generated.</p>";
     return;
   }
 
-  for (const item of results) {
+  results.forEach((item) => {
     const card = document.createElement("article");
-    card.className = "card";
+    card.className = "result-card";
     const errors =
       item.errors && item.errors.length
-        ? `<p class="error">${item.errors.map((e) => escapeHtml(e)).join("<br/>")}</p>`
+        ? `<p class="error">${item.errors.map((entry) => escapeHtml(entry)).join("<br/>")}</p>`
         : "";
-
-    const imageMarkup = item.image_url
-      ? `<img class="asset" src="${item.image_url}" alt="${escapeHtml(item.platform_label)} image asset" loading="lazy" />`
-      : "";
-    const videoMarkup = item.video_url
-      ? `<video class="asset" controls preload="metadata" src="${item.video_url}"></video>`
-      : "";
-    const links = `
-      <div class="links">
-        <a href="${item.copy_url}" target="_blank" rel="noopener noreferrer">Download Copy</a>
-        ${item.image_url ? `<a href="${item.image_url}" target="_blank" rel="noopener noreferrer">Download Image</a>` : ""}
-        ${item.video_url ? `<a href="${item.video_url}" target="_blank" rel="noopener noreferrer">Download Video</a>` : ""}
-      </div>
-    `;
-
     card.innerHTML = `
       <h3>${escapeHtml(item.platform_label)}</h3>
       <pre>${escapeHtml(item.copy || "")}</pre>
-      ${imageMarkup}
-      ${videoMarkup}
-      ${links}
+      ${item.image_url ? `<img class="asset" src="${item.image_url}" alt="${escapeHtml(item.platform_label)} creative" loading="lazy" />` : ""}
+      ${item.video_url ? `<video class="asset" controls preload="metadata" src="${item.video_url}"></video>` : ""}
+      <div class="links">
+        <a href="${item.copy_url}" target="_blank" rel="noopener">Copy</a>
+        ${item.image_url ? `<a href="${item.image_url}" target="_blank" rel="noopener">Image</a>` : ""}
+        ${item.video_url ? `<a href="${item.video_url}" target="_blank" rel="noopener">Clip</a>` : ""}
+      </div>
       ${errors}
     `;
     resultsContainer.appendChild(card);
-  }
+  });
 }
 
 async function loadPlatforms() {
-  setStatus("Loading platform presets...");
-  try {
-    const response = await fetch("/api/platforms");
-    if (!response.ok) {
-      throw new Error(`Failed to load platforms (${response.status})`);
-    }
-    const data = await response.json();
-    renderPlatforms(data.platforms || []);
-    setStatus("Ready.");
-  } catch (error) {
-    setStatus(`Error loading platforms: ${error.message}`, true);
+  const response = await fetch("/api/platforms");
+  if (!response.ok) throw new Error("Failed to load platforms");
+  const data = await response.json();
+  renderPlatforms(data.platforms || []);
+}
+
+async function loadExistingBrand() {
+  const response = await fetch("/api/brands");
+  if (!response.ok) return;
+  const data = await response.json();
+  const brands = data.brands || [];
+  if (brands[0]) {
+    renderBrand(brands[0]);
+    setStatus(`Loaded Brand DNA for ${brands[0].name}. Continue to campaign ideas.`);
   }
 }
 
-async function analyzeLinks() {
-  const links = websiteLinksInput.value.trim();
-  if (!links) {
-    setStatus("Add at least one website link before analyzing.", true);
-    return;
-  }
-
-  analyzeLinksBtn.disabled = true;
-  setStatus("Analyzing website links...");
+async function buildBrandDNA(event) {
+  event.preventDefault();
+  dnaBtn.disabled = true;
+  setStatus("Extracting Business DNA from website...");
   try {
-    const response = await fetch("/api/website-insights", {
+    const response = await fetch("/api/brand-dna", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ links }),
+      body: JSON.stringify({
+        website_url: document.getElementById("website-url").value.trim(),
+        brand_name: document.getElementById("brand-name").value.trim(),
+        extra_notes: document.getElementById("extra-notes").value.trim(),
+      }),
     });
     const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.detail || "Failed to analyze links.");
-    }
-    renderInsights(data.insights || []);
-    setStatus("Website links analyzed.");
+    if (!response.ok) throw new Error(data.detail || "Brand DNA extraction failed");
+    renderBrand(data);
+    setStep(2);
+    setStatus(`Brand DNA ready for ${data.name}. Generate campaign ideas next.`);
   } catch (error) {
-    setStatus(`Website analysis error: ${error.message}`, true);
+    setStatus(`Brand DNA error: ${error.message}`, true);
   } finally {
-    analyzeLinksBtn.disabled = false;
+    dnaBtn.disabled = false;
+  }
+}
+
+async function buildIdeas(event) {
+  event.preventDefault();
+  if (!state.brand?.id) {
+    setStatus("Build Brand DNA first.", true);
+    setStep(1);
+    return;
+  }
+  ideasBtn.disabled = true;
+  setStatus("Generating Jasper-style campaign ideas...");
+  try {
+    const response = await fetch("/api/campaign-ideas", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        brand_id: state.brand.id,
+        product_name: document.getElementById("product-name").value.trim(),
+        custom_prompt: document.getElementById("custom-prompt").value.trim(),
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Idea generation failed");
+    renderIdeas(data.ideas || []);
+    setStatus(`Generated ${(data.ideas || []).length} campaign ideas. Select one to continue.`);
+  } catch (error) {
+    setStatus(`Ideas error: ${error.message}`, true);
+  } finally {
+    ideasBtn.disabled = false;
   }
 }
 
 async function generateCampaign(event) {
   event.preventDefault();
-  const selected = selectedPlatforms();
-  if (!selected.length) {
-    setStatus("Select at least one platform.", true);
+  if (!state.brand?.id) {
+    setStatus("Build Brand DNA first.", true);
+    setStep(1);
     return;
   }
 
-  const formData = new FormData(form);
-  for (const platform of selected) {
-    formData.append("platforms", platform);
+  const platforms = selectedPlatforms();
+  if (!platforms.length) {
+    setStatus("Select at least one channel.", true);
+    return;
+  }
+
+  const formData = new FormData(campaignForm);
+  formData.set("brand_id", state.brand.id);
+  platforms.forEach((platform) => formData.append("platforms", platform));
+  if (state.selectedIdea) {
+    formData.set("idea_title", state.selectedIdea.title || "");
+    formData.set("idea_angle", state.selectedIdea.angle || "");
+    formData.set("idea_objective", state.selectedIdea.objective || "");
+    formData.set("idea_channels", state.selectedIdea.channels || "");
   }
 
   generateBtn.disabled = true;
-  analyzeLinksBtn.disabled = true;
-  setStatus("Generating marketing assets. This can take 30-90 seconds...");
-
+  setStatus("Generating on-brand creatives and channel pack. This can take up to a minute...");
   try {
-    const response = await fetch("/api/generate", {
+    const response = await fetch("/api/campaigns/generate", {
       method: "POST",
       body: formData,
     });
     const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.detail || "Generation request failed.");
-    }
+    if (!response.ok) throw new Error(payload.detail || "Campaign generation failed");
     renderResults(payload);
     setStatus(
-      `Campaign ${payload.campaign_id} finished. Generated ${payload.platform_count} platform packs (${payload.clip_duration_seconds}s clips).`
+      `Campaign ${payload.campaign_id} ready · ${payload.platform_count} platform creatives · ${payload.clip_duration_seconds}s clips`
     );
   } catch (error) {
     setStatus(`Generation failed: ${error.message}`, true);
   } finally {
     generateBtn.disabled = false;
-    analyzeLinksBtn.disabled = false;
   }
 }
+
+document.querySelectorAll(".step").forEach((button) => {
+  button.addEventListener("click", () => setStep(Number(button.dataset.step)));
+});
 
 clipDurationInput.addEventListener("input", () => {
   clipDurationValue.textContent = `${clipDurationInput.value}s`;
 });
 
-analyzeLinksBtn.addEventListener("click", analyzeLinks);
-form.addEventListener("submit", generateCampaign);
-loadPlatforms();
+dnaForm.addEventListener("submit", buildBrandDNA);
+ideasForm.addEventListener("submit", buildIdeas);
+campaignForm.addEventListener("submit", generateCampaign);
+
+(async function boot() {
+  try {
+    await loadPlatforms();
+    await loadExistingBrand();
+  } catch (error) {
+    setStatus(`Startup error: ${error.message}`, true);
+  }
+})();

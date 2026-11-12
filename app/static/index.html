@@ -3,102 +3,191 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Marketing Content Studio</title>
+    <title>Helix — Brand DNA Campaign Studio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600&family=Syne:wght@600;700;800&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <main class="page">
-      <header class="hero">
-        <h1>Marketing Content Studio</h1>
-        <p>
-          Generate platform-ready marketing images and 8-12 second clips from uploads
-          or existing website links.
-        </p>
-      </header>
+    <div class="atmosphere" aria-hidden="true"></div>
 
-      <section class="panel">
-        <h2>Campaign Input</h2>
-        <form id="campaign-form">
-          <div class="grid two-col">
-            <label>
-              Project Name
-              <input name="project_name" type="text" placeholder="Spring Product Launch" required />
-            </label>
+    <header class="topbar">
+      <a class="wordmark" href="#top">Helix</a>
+      <nav class="topnav" aria-label="Primary">
+        <a href="#studio">Studio</a>
+        <a href="#dna">Brand DNA</a>
+        <a href="#campaigns">Campaigns</a>
+      </nav>
+    </header>
 
-            <label>
-              Brand Name
-              <input name="brand_name" type="text" placeholder="Acme Labs" />
-            </label>
+    <main id="top">
+      <section class="hero" aria-label="Helix hero">
+        <div class="hero-copy">
+          <p class="brand-mark">Helix</p>
+          <h1>On-brand campaigns from your Business DNA.</h1>
+          <p class="lede">
+            Paste a website. Helix extracts brand voice, colors, and imagery—then builds Jasper-style
+            multi-channel packs and Pomelli-style creatives, including 8–12s clips.
+          </p>
+          <div class="cta-row">
+            <a class="btn primary" href="#studio">Build Brand DNA</a>
+            <a class="btn ghost" href="#campaigns">Open Campaign Studio</a>
+          </div>
+        </div>
+        <div class="hero-visual" aria-hidden="true">
+          <div class="helix-orb">
+            <span class="ring ring-a"></span>
+            <span class="ring ring-b"></span>
+            <span class="ring ring-c"></span>
+            <div class="orb-core">
+              <strong>Business DNA</strong>
+              <small>voice · palette · assets</small>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="studio" class="workspace">
+        <div class="stepper" role="tablist" aria-label="Helix workflow">
+          <button class="step active" data-step="1" role="tab" aria-selected="true">1. Brand DNA</button>
+          <button class="step" data-step="2" role="tab" aria-selected="false">2. Campaign Ideas</button>
+          <button class="step" data-step="3" role="tab" aria-selected="false">3. Creatives</button>
+        </div>
+
+        <section id="dna" class="stage active" data-stage="1">
+          <div class="stage-head">
+            <h2>Build your Business DNA</h2>
+            <p>Pomelli-style extraction from your website: tone, palette, fonts, and source imagery.</p>
           </div>
 
-          <label>
-            Product / Offer Description
-            <textarea
-              name="product_description"
-              rows="4"
-              placeholder="Describe what you are promoting, who it helps, and why it matters."
-            ></textarea>
-          </label>
-
-          <div class="grid two-col">
+          <form id="dna-form" class="composer">
             <label>
-              Call to Action
-              <input name="call_to_action" type="text" value="Book a demo" />
+              Website URL
+              <input id="website-url" name="website_url" type="url" placeholder="https://yourbrand.com" required />
             </label>
+            <div class="split">
+              <label>
+                Brand name override
+                <input id="brand-name" name="brand_name" type="text" placeholder="Optional" />
+              </label>
+              <label>
+                Extra brand notes
+                <input id="extra-notes" name="extra_notes" type="text" placeholder="Audience, offer, constraints" />
+              </label>
+            </div>
+            <div class="actions">
+              <button type="submit" class="btn primary" id="dna-btn">Extract Brand DNA</button>
+            </div>
+          </form>
 
-            <label>
-              Clip Duration (8-12 sec)
-              <div class="range-row">
-                <input id="clip-duration" name="clip_duration" type="range" min="8" max="12" value="10" />
-                <span id="clip-duration-value">10s</span>
+          <div id="brand-panel" class="brand-panel hidden">
+            <div class="brand-identity">
+              <div>
+                <p class="eyebrow">Active Brand DNA</p>
+                <h3 id="brand-title">—</h3>
+                <p id="brand-tagline"></p>
+                <p id="brand-description" class="muted"></p>
               </div>
+              <div id="palette-swatches" class="swatches" aria-label="Brand palette"></div>
+            </div>
+            <div class="voice-grid">
+              <article>
+                <h4>Brand Voice</h4>
+                <p id="voice-summary"></p>
+                <ul id="voice-rules"></ul>
+              </article>
+              <article>
+                <h4>Visual System</h4>
+                <p id="font-summary"></p>
+                <div id="brand-images" class="thumb-row"></div>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section id="campaigns" class="stage" data-stage="2">
+          <div class="stage-head">
+            <h2>Generate campaign ideas</h2>
+            <p>Jasper-style briefing: pick a tailored idea or write your own campaign prompt.</p>
+          </div>
+
+          <form id="ideas-form" class="composer">
+            <div class="split">
+              <label>
+                Product / offer focus
+                <input id="product-name" type="text" placeholder="Product, service, or offer" />
+              </label>
+              <label>
+                Custom brief prompt
+                <input id="custom-prompt" type="text" placeholder="Optional: describe the campaign you want" />
+              </label>
+            </div>
+            <div class="actions">
+              <button type="submit" class="btn primary" id="ideas-btn">Generate Ideas</button>
+            </div>
+          </form>
+
+          <div id="ideas-grid" class="ideas-grid"></div>
+        </section>
+
+        <section class="stage" data-stage="3">
+          <div class="stage-head">
+            <h2>Create branded creatives</h2>
+            <p>Multi-channel pack: social, email, blog, ads, landing copy, images, and 8–12s clips.</p>
+          </div>
+
+          <form id="campaign-form" class="composer">
+            <div class="split">
+              <label>
+                Campaign title
+                <input id="campaign-title" name="title" type="text" placeholder="Spring Launch Pulse" required />
+              </label>
+              <label>
+                Call to action
+                <input id="campaign-cta" name="call_to_action" type="text" value="Book a demo" />
+              </label>
+            </div>
+
+            <label>
+              Campaign brief
+              <textarea id="campaign-brief" name="brief" rows="3" placeholder="What should this campaign say and sell?"></textarea>
             </label>
-          </div>
 
-          <label>
-            Website URLs (one per line or comma-separated)
-            <textarea
-              id="website-links"
-              name="website_links"
-              rows="3"
-              placeholder="https://example.com
-https://another-site.com"
-            ></textarea>
-          </label>
+            <div class="split">
+              <label>
+                Clip duration
+                <div class="range-row">
+                  <input id="clip-duration" name="clip_duration" type="range" min="8" max="12" value="10" />
+                  <span id="clip-duration-value">10s</span>
+                </div>
+              </label>
+              <label>
+                Upload source media
+                <input id="files" name="files" type="file" multiple accept="image/*,video/*" />
+              </label>
+            </div>
 
-          <div class="actions">
-            <button type="button" id="analyze-links-btn">Analyze Website Links</button>
-          </div>
+            <fieldset class="platform-picker">
+              <legend>Channels</legend>
+              <div id="platforms-container" class="platform-list"></div>
+            </fieldset>
 
-          <fieldset class="platform-picker">
-            <legend>Target Platforms</legend>
-            <div id="platforms-container" class="platform-list"></div>
-          </fieldset>
+            <div class="actions">
+              <button type="submit" class="btn primary" id="generate-btn">Generate Campaign Pack</button>
+            </div>
+          </form>
 
-          <label>
-            Upload Source Files (images or videos)
-            <input name="files" id="files" type="file" multiple accept="image/*,video/*" />
-          </label>
-
-          <div class="actions">
-            <button type="submit" id="generate-btn">Generate Marketing Assets</button>
-          </div>
-        </form>
+          <div id="channel-pack" class="channel-pack hidden"></div>
+          <div id="results-container" class="results-grid"></div>
+        </section>
       </section>
 
-      <section class="panel">
-        <h2>Status</h2>
-        <pre id="status-box">Ready.</pre>
-      </section>
-
-      <section class="panel">
-        <h2>Website Insights</h2>
-        <div id="insights-container" class="insights"></div>
-      </section>
-
-      <section class="panel">
-        <h2>Generated Assets</h2>
-        <div id="results-container" class="results-grid"></div>
+      <section class="status-dock">
+        <pre id="status-box">Ready. Start by extracting Brand DNA from a website.</pre>
       </section>
     </main>
 

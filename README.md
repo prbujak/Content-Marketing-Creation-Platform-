@@ -1,76 +1,45 @@
-# Marketing Content Studio
+# Helix — Brand DNA Campaign Studio
 
-A full-stack app for generating marketing assets across major social platforms.
+Helix replicates the core workflows of **Google Pomelli** and **Jasper**:
 
-## What it does
+1. **Business DNA** (Pomelli): paste a website URL to extract brand voice, palette, fonts, imagery, and values.
+2. **Campaign ideas** (Pomelli + Jasper): generate tailored campaign concepts or use a custom brief.
+3. **Multi-channel creatives** (Jasper + Pomelli): produce social posts, email, blog, ads, landing copy, on-brand images, and **8–12 second clips**.
 
-- Generates campaign-ready **images** for Instagram, Facebook, TikTok, YouTube Shorts, LinkedIn, X, and Pinterest.
-- Generates **8-12 second MP4 clips** for the same platforms.
-- Accepts **file uploads** (images/videos) as source media.
-- Accepts **website links** to extract title, description, and open-graph images for content generation.
-- Produces per-platform output:
-  - post copy
-  - downloadable image
-  - downloadable short clip
+## Features
 
-## Tech stack
+- Website → Brand DNA extraction
+- Brand voice rules and palette swatches
+- Campaign idea generator
+- Jasper-style channel pack (email / blog / ads / landing / social)
+- Platform-ready images + short MP4 clips
+- Upload extra images/videos as creative source media
+- Local JSON persistence for brands, campaigns, and catalog seeds
 
-- Backend: FastAPI
-- Frontend: Vanilla HTML/CSS/JS
-- Media processing: Pillow + ffmpeg
-- Website parsing: requests + BeautifulSoup
+## Supported platforms
+
+Instagram, Facebook, TikTok, YouTube Shorts, LinkedIn, X, Pinterest
 
 ## Run locally
 
-1. Install dependencies (venv option):
+```bash
+python3 -m pip install --user -r requirements.txt
+python3 -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
 
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
+Open [http://localhost:8000](http://localhost:8000)
 
-   If your environment does not have `python3-venv`, install packages directly:
+## API
 
-   ```bash
-   python3 -m pip install --user -r requirements.txt
-   ```
-
-2. Start the app:
-
-   ```bash
-   python3 -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-   ```
-
-3. Open:
-
-   ```text
-   http://localhost:8000
-   ```
-
-## API endpoints
-
-- `GET /api/platforms`  
-  Returns supported platform presets.
-
-- `POST /api/website-insights`  
-  Body: `{ "links": "https://example.com, https://another.com" }`  
-  Returns scraped metadata.
-
-- `POST /api/generate` (multipart form)  
-  Fields:
-  - `project_name` (required if brand name absent)
-  - `brand_name`
-  - `product_description`
-  - `call_to_action`
-  - `website_links` (comma/newline separated)
-  - `clip_duration` (8-12)
-  - `platforms` (repeat field)
-  - `files` (multiple uploads)
-
-Generated assets are served from `/generated/<campaign-id>/...`.
+- `POST /api/brand-dna` — build Business DNA from a website
+- `GET /api/brands` — list Brand DNA profiles
+- `POST /api/campaign-ideas` — generate campaign ideas for a brand
+- `POST /api/campaigns/generate` — create multi-channel creatives + clips
+- `GET /api/platforms` — platform presets
+- `GET/POST /api/catalog` — product/catalog helpers
 
 ## Notes
 
-- ffmpeg must be available on your machine (already available in this cloud environment).
-- The app currently uses template-based copy generation and website metadata extraction.
+- ffmpeg is required for clip generation.
+- Copy generation is deterministic/template-based and grounded in extracted Brand DNA (no external LLM key required).
+- Connect an LLM provider later if you want fully free-form generative copy.
