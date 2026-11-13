@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
+from .ai import ai_campaign_ideas, ai_channel_copy, ai_image_prompt, ai_status, generate_image_bytes, save_data_url_image
 from .storage import save_campaign
 
 
@@ -354,6 +355,10 @@ def create_marketing_video(
 
 
 def generate_campaign_ideas(brand: dict[str, Any], product_name: str = "", custom_prompt: str = "") -> list[dict[str, str]]:
+    ai_ideas = ai_campaign_ideas(brand, product_name=product_name, custom_prompt=custom_prompt)
+    if ai_ideas:
+        return ai_ideas
+
     name = brand.get("name", "Brand")
     tagline = brand.get("tagline", "")
     keywords = brand.get("keywords") or []
@@ -428,6 +433,57 @@ def build_channel_copy(
     call_to_action: str,
     platforms: list[str],
 ) -> dict[str, Any]:
+    ai_copy = ai_channel_copy(
+        brand=brand,
+        campaign_title=campaign_title,
+        brief=brief,
+        call_to_action=call_to_action,
+        platforms=platforms,
+    )
+    if ai_copy and isinstance(ai_copy.get("social"), dict):
+        # Normalize expected keys with safe defaults.
+        social = {}
+        for platform in platforms:
+            item = ai_copy["social"].get(platform) or {}
+            social[platform] = {
+                "label": PLATFORM_PRESETS.get(platform, {}).get("label", platform),
+                "hook": str(item.get("hook") or campaign_title)[:120],
+                "caption": str(item.get("caption") or brief)[:600],
+                "cta": str(item.get("cta") or call_to_action),
+                "tone_note": str(item.get("tone_note") or _voice_line(brand)),
+            }
+        email = ai_copy.get("email") or {}
+        blog = ai_copy.get("blog") or {}
+        ads = ai_copy.get("ads") or {}
+        landing = ai_copy.get("landing") or {}
+        return {
+            "social": social,
+            "email": {
+                "subject_variants": email.get("subject_variants") or [campaign_title],
+                "preview_text": email.get("preview_text") or brief[:90],
+                "body": email.get("body") or brief,
+            },
+            "blog": {
+                "title": blog.get("title") or campaign_title,
+                "outline": blog.get("outline") or [brief],
+                "intro": blog.get("intro") or brief,
+            },
+            "ads": {
+                "primary_text": ads.get("primary_text") or brief[:140],
+                "headline": ads.get("headline") or campaign_title[:40],
+                "description": ads.get("description") or brand.get("tagline", "")[:70],
+                "cta": ads.get("cta") or call_to_action,
+            },
+            "landing": {
+                "hero_headline": landing.get("hero_headline") or campaign_title,
+                "hero_subhead": landing.get("hero_subhead") or brief,
+                "proof_points": landing.get("proof_points") or (brand.get("values") or [])[:3],
+                "cta": landing.get("cta") or call_to_action,
+            },
+            "voice": ai_copy.get("voice") or _voice_line(brand),
+            "ai_generated": True,
+        }
+
     name = brand.get("name", "Brand")
     description = brand.get("description", "")
     tagline = brand.get("tagline", "")
@@ -608,6 +664,24 @@ def build_branded_campaign(
         video_path = video_dir / f"{platform}.mp4"
         image_for_video: Path | None = None
 
+        # Prefer OpenRouter AI image, then fall back to template overlay.
+        ai_source = None
+        try:
+            ratio = "1:1"
+            w, h = preset["image_size"]
+            if h > w * 1.2:
+                ratio = "9:16"
+            elif w > h * 1.2:
+                ratio = "16:9"
+            prompt = ai_image_prompt(brand, headline, body, preset["label"])
+            raw = generate_image_bytes(prompt, aspect_ratio=ratio)
+            if raw:
+                ai_path = image_dir / f"{platform}-ai.png"
+                if save_data_url_image(raw, ai_path):
+                    ai_source = ai_path
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            errors.append(f"AI image skipped: {exc}")
+
         try:
             render_marketing_image(
                 output_path=image_path,
@@ -616,7 +690,7 @@ def build_branded_campaign(
                 body=body,
                 cta=cta,
                 brand_name=brand.get("name", "Brand"),
-                source_image=default_image,
+                source_image=ai_source or default_image,
                 palette=palette,
             )
             image_url = f"/generated/{campaign_id}/images/{platform}.png"
@@ -683,6 +757,7 @@ def build_branded_campaign(
         "results": creative_results,
         "palette": palette,
         "voice": brand.get("voice", {}),
+        "ai": ai_status(),
     }
     (campaign_dir / "metadata.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return save_campaign(payload)

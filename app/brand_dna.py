@@ -17,6 +17,7 @@ import requests
 from bs4 import BeautifulSoup
 from PIL import Image
 
+from .ai import enrich_brand_voice
 from .storage import save_brand, save_catalog_item
 
 
@@ -631,6 +632,7 @@ def build_brand_dna(
         }
     )
 
+    brand = enrich_brand_voice(brand)
     return save_brand(brand)
 
 

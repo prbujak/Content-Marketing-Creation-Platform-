@@ -52,6 +52,7 @@
       </section>
 
       <section id="studio" class="workspace">
+        <div id="ai-status" class="ai-status">Checking AI provider...</div>
         <div class="stepper" role="tablist" aria-label="eMarketster workflow">
           <button class="step active" data-step="1" role="tab" aria-selected="true">1. Brand DNA</button>
           <button class="step" data-step="2" role="tab" aria-selected="false">2. Campaign Ideas</button>
@@ -83,6 +84,29 @@
               <button type="submit" class="btn primary" id="dna-btn">Extract Brand DNA</button>
             </div>
           </form>
+
+          <div class="composer" id="catalog-panel">
+            <h3>Product Catalog</h3>
+            <p class="muted">Add products/services to ground campaigns (Pomelli-style ingredients).</p>
+            <form id="catalog-form" class="split">
+              <label>
+                Product name
+                <input id="catalog-name" type="text" placeholder="Stripe Billing" required />
+              </label>
+              <label>
+                Product URL (optional)
+                <input id="catalog-url" type="url" placeholder="https://..." />
+              </label>
+              <label class="full">
+                Description
+                <input id="catalog-description" type="text" placeholder="What it is and who it’s for" />
+              </label>
+              <div class="actions full">
+                <button type="submit" class="btn primary" id="catalog-btn">Add to Catalog</button>
+              </div>
+            </form>
+            <div id="catalog-list" class="catalog-list"></div>
+          </div>
 
           <div id="brand-panel" class="brand-panel hidden">
             <div class="brand-identity">
@@ -190,6 +214,34 @@
         <pre id="status-box">Ready. Welcome to eMarketster. Start by extracting Brand DNA from a website.</pre>
       </section>
     </main>
+
+    <div id="editor-modal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Creative editor">
+      <div class="modal-card">
+        <div class="modal-head">
+          <h3 id="editor-title">Edit creative</h3>
+          <button type="button" id="editor-close" class="btn ghost">Close</button>
+        </div>
+        <label>
+          Headline
+          <input id="editor-headline" type="text" />
+        </label>
+        <label>
+          Body
+          <textarea id="editor-body" rows="4"></textarea>
+        </label>
+        <label>
+          CTA
+          <input id="editor-cta" type="text" />
+        </label>
+        <label class="check-row">
+          <input id="editor-regen-image" type="checkbox" checked />
+          Regenerate AI background image
+        </label>
+        <div class="actions">
+          <button type="button" class="btn primary" id="editor-save">Save Creative</button>
+        </div>
+      </div>
+    </div>
 
     <script src="/static/app.js" defer></script>
   </body>

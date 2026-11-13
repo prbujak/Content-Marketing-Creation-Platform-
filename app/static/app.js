@@ -2,12 +2,16 @@ const state = {
   brand: null,
   selectedIdea: null,
   platforms: [],
+  campaign: null,
+  editing: null,
+  ai: null,
 };
 
 const statusBox = document.getElementById("status-box");
 const dnaForm = document.getElementById("dna-form");
 const ideasForm = document.getElementById("ideas-form");
 const campaignForm = document.getElementById("campaign-form");
+const catalogForm = document.getElementById("catalog-form");
 const dnaBtn = document.getElementById("dna-btn");
 const ideasBtn = document.getElementById("ideas-btn");
 const generateBtn = document.getElementById("generate-btn");
@@ -18,6 +22,9 @@ const channelPack = document.getElementById("channel-pack");
 const platformsContainer = document.getElementById("platforms-container");
 const clipDurationInput = document.getElementById("clip-duration");
 const clipDurationValue = document.getElementById("clip-duration-value");
+const aiStatusBox = document.getElementById("ai-status");
+const catalogList = document.getElementById("catalog-list");
+const editorModal = document.getElementById("editor-modal");
 
 function setStatus(message, isError = false) {
   statusBox.textContent = message;
@@ -44,14 +51,28 @@ function setStep(stepNumber) {
   });
 }
 
+function renderAiStatus(status) {
+  state.ai = status;
+  if (!aiStatusBox) return;
+  aiStatusBox.classList.remove("live", "sample");
+  if (status?.enabled) {
+    aiStatusBox.classList.add("live");
+    aiStatusBox.textContent = `OpenRouter live · text ${status.text_model} · image ${status.image_model}`;
+  } else {
+    aiStatusBox.classList.add("sample");
+    aiStatusBox.textContent =
+      "Sample mode active. Add OPENROUTER_API_KEY in Cursor Secrets to unlock multi-model copy + images.";
+  }
+}
+
 function renderPlatforms(platforms) {
   state.platforms = platforms;
   platformsContainer.innerHTML = "";
-  platforms.forEach((platform) => {
+  platforms.forEach((platform, index) => {
     const label = document.createElement("label");
     label.className = "platform-option";
     label.innerHTML = `
-      <input type="checkbox" data-platform="${escapeHtml(platform.key)}" checked />
+      <input type="checkbox" data-platform="${escapeHtml(platform.key)}" ${index < 3 ? "checked" : ""} />
       <span>
         <strong>${escapeHtml(platform.label)}</strong>
         <small>${escapeHtml(platform.tone)}</small>
@@ -86,7 +107,7 @@ function renderBrand(brand) {
 
   const voice = brand.voice || {};
   document.getElementById("voice-summary").textContent =
-    `${voice.primary_tone || "professional"} · ${voice.secondary_tone || "friendly"}`;
+    `${voice.primary_tone || "professional"} · ${voice.secondary_tone || "friendly"}${voice.ai_enriched ? " · AI enriched" : ""}`;
   const rules = document.getElementById("voice-rules");
   rules.innerHTML = "";
   (voice.style_rules || []).slice(0, 4).forEach((rule) => {
@@ -106,6 +127,30 @@ function renderBrand(brand) {
     img.src = image.public_url;
     img.alt = `${brand.name} source`;
     images.appendChild(img);
+  });
+
+  loadCatalog(brand.id);
+}
+
+function renderCatalog(items = []) {
+  catalogList.innerHTML = "";
+  if (!items.length) {
+    catalogList.innerHTML = "<p class='muted'>No catalog items yet.</p>";
+    return;
+  }
+  items.forEach((item) => {
+    const node = document.createElement("article");
+    node.className = "catalog-item";
+    node.innerHTML = `
+      <strong>${escapeHtml(item.name || "Untitled")}</strong>
+      <div class="muted">${escapeHtml(item.description || "")}</div>
+    `;
+    node.addEventListener("click", () => {
+      document.getElementById("product-name").value = item.name || "";
+      setStatus(`Using catalog item “${item.name}” for campaign ideas.`);
+      setStep(2);
+    });
+    catalogList.appendChild(node);
   });
 }
 
@@ -157,10 +202,11 @@ function renderChannelPack(channels = {}) {
   const blog = content.blog || {};
   const ads = content.ads || {};
   const landing = content.landing || {};
+  const aiBadge = content.ai_generated ? " · AI generated" : " · template fallback";
 
   channelPack.innerHTML = `
     <div class="channel-block">
-      <h3>Jasper Channel Pack</h3>
+      <h3>Jasper Channel Pack${aiBadge}</h3>
       <p>${escapeHtml(content.voice || "")}</p>
       <div class="links">
         <a href="${channels.email_url}" target="_blank" rel="noopener">Email</a>
@@ -188,8 +234,25 @@ function renderChannelPack(channels = {}) {
   `;
 }
 
+function openEditor(item) {
+  state.editing = item;
+  const lines = (item.copy || "").split("\n").filter(Boolean);
+  document.getElementById("editor-title").textContent = `Edit ${item.platform_label}`;
+  document.getElementById("editor-headline").value = lines[0] || "";
+  document.getElementById("editor-body").value = lines.slice(1, -1).join(" ").trim() || lines[1] || "";
+  document.getElementById("editor-cta").value = lines[lines.length - 1] || "Learn more";
+  editorModal.classList.remove("hidden");
+}
+
+function closeEditor() {
+  state.editing = null;
+  editorModal.classList.add("hidden");
+}
+
 function renderResults(payload) {
+  state.campaign = payload;
   renderChannelPack(payload.channels || {});
+  if (payload.ai) renderAiStatus(payload.ai);
   resultsContainer.innerHTML = "";
   const results = payload.results || [];
   if (!results.length) {
@@ -213,9 +276,11 @@ function renderResults(payload) {
         <a href="${item.copy_url}" target="_blank" rel="noopener">Copy</a>
         ${item.image_url ? `<a href="${item.image_url}" target="_blank" rel="noopener">Image</a>` : ""}
         ${item.video_url ? `<a href="${item.video_url}" target="_blank" rel="noopener">Clip</a>` : ""}
+        <button type="button" class="btn ghost edit-btn">Edit</button>
       </div>
       ${errors}
     `;
+    card.querySelector(".edit-btn").addEventListener("click", () => openEditor(item));
     resultsContainer.appendChild(card);
   });
 }
@@ -225,6 +290,23 @@ async function loadPlatforms() {
   if (!response.ok) throw new Error("Failed to load platforms");
   const data = await response.json();
   renderPlatforms(data.platforms || []);
+}
+
+async function loadAiStatus() {
+  const response = await fetch("/api/ai-status");
+  if (!response.ok) return;
+  renderAiStatus(await response.json());
+}
+
+async function loadCatalog(brandId) {
+  if (!brandId) {
+    renderCatalog([]);
+    return;
+  }
+  const response = await fetch(`/api/catalog?brand_id=${encodeURIComponent(brandId)}`);
+  if (!response.ok) return;
+  const data = await response.json();
+  renderCatalog(data.items || []);
 }
 
 async function loadExistingBrand() {
@@ -264,6 +346,38 @@ async function buildBrandDNA(event) {
   }
 }
 
+async function addCatalogItem(event) {
+  event.preventDefault();
+  if (!state.brand?.id) {
+    setStatus("Build Brand DNA first before adding catalog items.", true);
+    setStep(1);
+    return;
+  }
+  const button = document.getElementById("catalog-btn");
+  button.disabled = true;
+  try {
+    const response = await fetch("/api/catalog", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        brand_id: state.brand.id,
+        name: document.getElementById("catalog-name").value.trim(),
+        description: document.getElementById("catalog-description").value.trim(),
+        source_url: document.getElementById("catalog-url").value.trim(),
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not save catalog item");
+    catalogForm.reset();
+    await loadCatalog(state.brand.id);
+    setStatus(`Added catalog item “${data.name}”.`);
+  } catch (error) {
+    setStatus(`Catalog error: ${error.message}`, true);
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function buildIdeas(event) {
   event.preventDefault();
   if (!state.brand?.id) {
@@ -272,7 +386,11 @@ async function buildIdeas(event) {
     return;
   }
   ideasBtn.disabled = true;
-  setStatus("Generating Jasper-style campaign ideas...");
+  setStatus(
+    state.ai?.enabled
+      ? "Generating OpenRouter campaign ideas..."
+      : "Generating sample campaign ideas (no OpenRouter key yet)..."
+  );
   try {
     const response = await fetch("/api/campaign-ideas", {
       method: "POST",
@@ -319,7 +437,11 @@ async function generateCampaign(event) {
   }
 
   generateBtn.disabled = true;
-  setStatus("Generating on-brand creatives and channel pack. This can take up to a minute...");
+  setStatus(
+    state.ai?.enabled
+      ? "Generating AI creatives via OpenRouter. This can take a minute..."
+      : "Generating sample creatives (template mode). Add OPENROUTER_API_KEY for live AI..."
+  );
   try {
     const response = await fetch("/api/campaigns/generate", {
       method: "POST",
@@ -338,6 +460,36 @@ async function generateCampaign(event) {
   }
 }
 
+async function saveEditor() {
+  if (!state.editing || !state.campaign?.campaign_id) return;
+  const saveBtn = document.getElementById("editor-save");
+  saveBtn.disabled = true;
+  setStatus("Updating creative...");
+  try {
+    const response = await fetch("/api/creatives/edit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        campaign_id: state.campaign.campaign_id,
+        platform_key: state.editing.platform_key,
+        headline: document.getElementById("editor-headline").value.trim(),
+        body: document.getElementById("editor-body").value.trim(),
+        cta: document.getElementById("editor-cta").value.trim(),
+        regenerate_ai_image: document.getElementById("editor-regen-image").checked,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Edit failed");
+    renderResults(data.campaign);
+    closeEditor();
+    setStatus(`Updated ${data.result.platform_label} creative.`);
+  } catch (error) {
+    setStatus(`Editor error: ${error.message}`, true);
+  } finally {
+    saveBtn.disabled = false;
+  }
+}
+
 document.querySelectorAll(".step").forEach((button) => {
   button.addEventListener("click", () => setStep(Number(button.dataset.step)));
 });
@@ -349,10 +501,16 @@ clipDurationInput.addEventListener("input", () => {
 dnaForm.addEventListener("submit", buildBrandDNA);
 ideasForm.addEventListener("submit", buildIdeas);
 campaignForm.addEventListener("submit", generateCampaign);
+catalogForm.addEventListener("submit", addCatalogItem);
+document.getElementById("editor-close").addEventListener("click", closeEditor);
+document.getElementById("editor-save").addEventListener("click", saveEditor);
+editorModal.addEventListener("click", (event) => {
+  if (event.target === editorModal) closeEditor();
+});
 
 (async function boot() {
   try {
-    await loadPlatforms();
+    await Promise.all([loadPlatforms(), loadAiStatus()]);
     await loadExistingBrand();
   } catch (error) {
     setStatus(`Startup error: ${error.message}`, true);

@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from .ai import ai_status
 from .brand_dna import brand_summary, build_brand_dna
 from .content_engine import (
     PLATFORM_PRESETS,
@@ -24,6 +25,7 @@ from .storage import (
     list_campaigns,
     list_catalog,
     sanitize_id,
+    save_campaign,
     save_catalog_item,
     update_brand,
 )
@@ -69,6 +71,7 @@ class IdeasRequest(BaseModel):
     brand_id: str
     product_name: str = ""
     custom_prompt: str = ""
+    text_model: str = ""
 
 
 class CatalogRequest(BaseModel):
@@ -77,6 +80,15 @@ class CatalogRequest(BaseModel):
     description: str = ""
     source_url: str = ""
     image_url: str = ""
+
+
+class CreativeEditRequest(BaseModel):
+    campaign_id: str
+    platform_key: str
+    headline: str = ""
+    body: str = ""
+    cta: str = ""
+    regenerate_ai_image: bool = True
 
 
 class CampaignGenerateRequest(BaseModel):
@@ -171,6 +183,11 @@ def get_platforms() -> dict[str, list[dict[str, str]]]:
         for key, preset in PLATFORM_PRESETS.items()
     ]
     return {"platforms": platforms}
+
+
+@app.get("/api/ai-status")
+def api_ai_status() -> dict:
+    return ai_status()
 
 
 @app.get("/api/brands")
@@ -307,6 +324,104 @@ async def api_generate_campaign(
         return payload
     except Exception as exc:  # pylint: disable=broad-exception-caught
         raise HTTPException(status_code=500, detail=f"Failed to generate campaign: {exc}") from exc
+
+
+
+@app.post("/api/creatives/edit")
+def api_edit_creative(payload: CreativeEditRequest) -> dict:
+    from .ai import ai_image_prompt, generate_image_bytes, save_data_url_image
+    from .content_engine import PLATFORM_PRESETS, create_marketing_video, render_marketing_image
+
+    try:
+        sanitize_id(payload.campaign_id, label="campaign_id")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    campaign = get_campaign(payload.campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found.")
+
+    platform = payload.platform_key.strip().lower()
+    preset = PLATFORM_PRESETS.get(platform)
+    if not preset:
+        raise HTTPException(status_code=400, detail="Unknown platform.")
+
+    brand = get_brand(campaign.get("brand_id") or "") if campaign.get("brand_id") else None
+    brand = brand or {
+        "name": campaign.get("brand_name") or "Brand",
+        "palette": campaign.get("palette") or {},
+        "voice": campaign.get("voice") or {},
+    }
+
+    result_item = None
+    for item in campaign.get("results") or []:
+        if item.get("platform_key") == platform:
+            result_item = item
+            break
+    if not result_item:
+        raise HTTPException(status_code=404, detail="Creative not found for platform.")
+
+    headline = payload.headline.strip() or result_item.get("copy", "").split("\n")[0][:72]
+    body = payload.body.strip() or campaign.get("brief") or ""
+    cta = payload.cta.strip() or "Learn more"
+
+    image_dir = GENERATED_DIR / payload.campaign_id / "images"
+    video_dir = GENERATED_DIR / payload.campaign_id / "videos"
+    copy_dir = GENERATED_DIR / payload.campaign_id / "copy"
+    image_path = image_dir / f"{platform}.png"
+    video_path = video_dir / f"{platform}.mp4"
+    source_image = None
+
+    if payload.regenerate_ai_image:
+        ratio = "1:1"
+        w, h = preset["image_size"]
+        if h > w * 1.2:
+            ratio = "9:16"
+        elif w > h * 1.2:
+            ratio = "16:9"
+        prompt = ai_image_prompt(brand, headline, body, preset["label"])
+        raw = generate_image_bytes(prompt, aspect_ratio=ratio)
+        if raw:
+            ai_path = image_dir / f"{platform}-ai.png"
+            source_image = save_data_url_image(raw, ai_path)
+
+    try:
+        render_marketing_image(
+            output_path=image_path,
+            size=tuple(preset["image_size"]),
+            headline=headline,
+            body=body,
+            cta=cta,
+            brand_name=brand.get("name", "Brand"),
+            source_image=source_image,
+            palette=brand.get("palette") or campaign.get("palette") or {},
+        )
+        create_marketing_video(
+            output_path=video_path,
+            size=tuple(preset["video_size"]),
+            clip_duration=int(campaign.get("clip_duration_seconds") or 10),
+            source_video=None,
+            source_image=image_path,
+        )
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        raise HTTPException(status_code=500, detail=f"Failed to update creative: {exc}") from exc
+
+    caption = f"{headline}\n\n{body}\n\n{cta}"
+    copy_dir.mkdir(parents=True, exist_ok=True)
+    (copy_dir / f"{platform}.txt").write_text(caption, encoding="utf-8")
+
+    result_item["copy"] = caption
+    result_item["image_url"] = f"/generated/{payload.campaign_id}/images/{platform}.png?v={uuid4().hex[:6]}"
+    result_item["video_url"] = f"/generated/{payload.campaign_id}/videos/{platform}.mp4?v={uuid4().hex[:6]}"
+    result_item["copy_url"] = f"/generated/{payload.campaign_id}/copy/{platform}.txt"
+    result_item["errors"] = []
+
+    for idx, item in enumerate(campaign.get("results") or []):
+        if item.get("platform_key") == platform:
+            campaign["results"][idx] = result_item
+            break
+    save_campaign(campaign)
+    return {"campaign": campaign, "result": result_item}
 
 
 # Compatibility endpoint kept for older clients.

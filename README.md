@@ -1,24 +1,30 @@
 # eMarketster — Brand DNA Campaign Studio
 
-eMarketster replicates the core workflows of **Google Pomelli** and **Jasper**:
+eMarketster replicates the core workflows of **Google Pomelli** and **Jasper**, now with optional **OpenRouter** multi-model AI.
 
-1. **Business DNA** (Pomelli): paste a website URL to extract brand voice, palette, fonts, imagery, and values.
-2. **Campaign ideas** (Pomelli + Jasper): generate tailored campaign concepts or use a custom brief.
-3. **Multi-channel creatives** (Jasper + Pomelli): produce social posts, email, blog, ads, landing copy, on-brand images, and **8–12 second clips**.
+## What you get
 
-## Features
+1. **Business DNA** from a website (voice, palette, fonts, imagery)
+2. **Campaign ideas** (AI when OpenRouter is configured)
+3. **Multi-channel packs** — social, email, blog, ads, landing
+4. **Creatives** — on-brand images + 8–12s clips
+5. **Catalog** for products/services
+6. **Creative editor** to revise headline/body/CTA and regenerate AI images
 
-- Website → Brand DNA extraction
-- Brand voice rules and palette swatches
-- Campaign idea generator
-- Jasper-style channel pack (email / blog / ads / landing / social)
-- Platform-ready images + short MP4 clips
-- Upload extra images/videos as creative source media
-- Local JSON persistence for brands, campaigns, and catalog seeds
+## OpenRouter setup (multi-model)
 
-## Supported platforms
+Add this secret in Cursor (Secrets / publish bindings):
 
-Instagram, Facebook, TikTok, YouTube Shorts, LinkedIn, X, Pinterest
+- `OPENROUTER_API_KEY`
+
+Optional env overrides:
+
+- `OPENROUTER_TEXT_MODEL` (default `openai/gpt-4o-mini`)
+- `OPENROUTER_IMAGE_MODEL` (default `google/gemini-2.5-flash-image-preview`)
+
+Without a key, eMarketster still runs in **sample/template mode**.
+
+OpenRouter can route across many models; eMarketster sends fallback model lists automatically.
 
 ## Run locally
 
@@ -27,19 +33,10 @@ python3 -m pip install --user -r requirements.txt
 python3 -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Open [http://localhost:8000](http://localhost:8000)
+Open http://localhost:8000
 
-## API
+## Security notes
 
-- `POST /api/brand-dna` — build Business DNA from a website
-- `GET /api/brands` — list Brand DNA profiles
-- `POST /api/campaign-ideas` — generate campaign ideas for a brand
-- `POST /api/campaigns/generate` — create multi-channel creatives + clips
-- `GET /api/platforms` — platform presets
-- `GET/POST /api/catalog` — product/catalog helpers
-
-## Notes
-
-- ffmpeg is required for clip generation.
-- Copy generation is deterministic/template-based and grounded in extracted Brand DNA (no external LLM key required).
-- Connect an LLM provider later if you want fully free-form generative copy.
+- Outbound website/asset fetches validate public http(s) targets and redirect hops
+- Storage IDs are sanitized with path containment checks
+- Uploads and ffmpeg/image work are size/timeout limited
