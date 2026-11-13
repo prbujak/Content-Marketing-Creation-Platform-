@@ -23,6 +23,7 @@ from .storage import (
     list_brands,
     list_campaigns,
     list_catalog,
+    sanitize_id,
     save_catalog_item,
     update_brand,
 )
@@ -32,6 +33,11 @@ BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 GENERATED_DIR = BASE_DIR / "generated"
 UPLOAD_DIR = BASE_DIR / "uploads"
+
+MAX_UPLOAD_FILES = 5
+MAX_UPLOAD_BYTES_PER_FILE = 15 * 1024 * 1024  # 15 MB
+MAX_UPLOAD_BYTES_TOTAL = 40 * 1024 * 1024  # 40 MB
+MAX_PLATFORMS_PER_REQUEST = 4
 
 for directory in (STATIC_DIR, GENERATED_DIR, UPLOAD_DIR):
     directory.mkdir(parents=True, exist_ok=True)
@@ -95,25 +101,62 @@ def _normalize_platforms(raw_platforms: list[str]) -> list[str]:
             value = candidate.strip().lower()
             if value and value in PLATFORM_PRESETS and value not in selected:
                 selected.append(value)
+            if len(selected) >= MAX_PLATFORMS_PER_REQUEST:
+                return selected
     return selected
 
 
 async def _save_uploads(files: list[UploadFile] | None) -> list[Path]:
     if not files:
         return []
+
+    usable = [uploaded for uploaded in files if uploaded.filename]
+    if len(usable) > MAX_UPLOAD_FILES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Too many uploads. Maximum is {MAX_UPLOAD_FILES} files.",
+        )
+
     request_upload_dir = UPLOAD_DIR / f"request-{uuid4().hex[:8]}"
     request_upload_dir.mkdir(parents=True, exist_ok=True)
     saved_files: list[Path] = []
-    for uploaded in files:
-        if not uploaded.filename:
-            continue
+    total_bytes = 0
+
+    for uploaded in usable:
         safe_name = _sanitize_filename(uploaded.filename)
         destination = request_upload_dir / f"{uuid4().hex[:8]}-{safe_name}"
+        written = 0
         with destination.open("wb") as file_buffer:
-            shutil.copyfileobj(uploaded.file, file_buffer)
+            while True:
+                chunk = await uploaded.read(64 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                total_bytes += len(chunk)
+                if written > MAX_UPLOAD_BYTES_PER_FILE or total_bytes > MAX_UPLOAD_BYTES_TOTAL:
+                    file_buffer.close()
+                    destination.unlink(missing_ok=True)
+                    await uploaded.close()
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Upload exceeds size limits (15MB/file, 40MB total).",
+                    )
+                file_buffer.write(chunk)
         saved_files.append(destination)
         await uploaded.close()
     return saved_files
+
+
+
+def _require_brand(brand_id: str) -> dict:
+    try:
+        safe_id = sanitize_id(brand_id, label="brand_id")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    brand = get_brand(safe_id)
+    if not brand:
+        raise HTTPException(status_code=404, detail="Brand DNA not found.")
+    return brand
 
 
 @app.get("/", include_in_schema=False)
@@ -137,10 +180,7 @@ def api_list_brands() -> dict:
 
 @app.get("/api/brands/{brand_id}")
 def api_get_brand(brand_id: str) -> dict:
-    brand = get_brand(brand_id)
-    if not brand:
-        raise HTTPException(status_code=404, detail="Brand DNA not found.")
-    return brand_summary(brand)
+    return brand_summary(_require_brand(brand_id))
 
 
 @app.post("/api/brand-dna")
@@ -164,8 +204,12 @@ def api_build_brand_dna(payload: BrandDNARequest) -> dict:
 
 @app.patch("/api/brands/{brand_id}")
 def api_update_brand(brand_id: str, payload: BrandUpdateRequest) -> dict:
+    _require_brand(brand_id)
     updates = {key: value for key, value in payload.model_dump().items() if value is not None}
-    brand = update_brand(brand_id, updates)
+    try:
+        brand = update_brand(brand_id, updates)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not brand:
         raise HTTPException(status_code=404, detail="Brand DNA not found.")
     return brand_summary(brand)
@@ -173,9 +217,7 @@ def api_update_brand(brand_id: str, payload: BrandUpdateRequest) -> dict:
 
 @app.post("/api/campaign-ideas")
 def api_campaign_ideas(payload: IdeasRequest) -> dict:
-    brand = get_brand(payload.brand_id)
-    if not brand:
-        raise HTTPException(status_code=404, detail="Brand DNA not found.")
+    brand = _require_brand(payload.brand_id)
     ideas = generate_campaign_ideas(
         brand=brand,
         product_name=payload.product_name,
@@ -186,25 +228,40 @@ def api_campaign_ideas(payload: IdeasRequest) -> dict:
 
 @app.get("/api/catalog")
 def api_list_catalog(brand_id: str | None = None) -> dict:
+    if brand_id:
+        try:
+            brand_id = sanitize_id(brand_id, label="brand_id")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"items": list_catalog(brand_id)}
 
 
 @app.post("/api/catalog")
 def api_create_catalog_item(payload: CatalogRequest) -> dict:
-    brand = get_brand(payload.brand_id)
-    if not brand:
-        raise HTTPException(status_code=404, detail="Brand DNA not found.")
-    item = save_catalog_item(payload.model_dump())
+    _require_brand(payload.brand_id)
+    try:
+        item = save_catalog_item(payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return item
 
 
 @app.get("/api/campaigns")
 def api_list_campaigns(brand_id: str | None = None) -> dict:
+    if brand_id:
+        try:
+            brand_id = sanitize_id(brand_id, label="brand_id")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"campaigns": list_campaigns(brand_id)}
 
 
 @app.get("/api/campaigns/{campaign_id}")
 def api_get_campaign(campaign_id: str) -> dict:
+    try:
+        sanitize_id(campaign_id, label="campaign_id")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     campaign = get_campaign(campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found.")
@@ -225,11 +282,9 @@ async def api_generate_campaign(
     idea_channels: str = Form(default=""),
     files: list[UploadFile] | None = File(default=None),
 ) -> dict:
-    brand = get_brand(brand_id)
-    if not brand:
-        raise HTTPException(status_code=404, detail="Brand DNA not found. Build Business DNA first.")
+    brand = _require_brand(brand_id)
 
-    selected = _normalize_platforms(platforms) or list(PLATFORM_PRESETS.keys())
+    selected = _normalize_platforms(platforms) or list(PLATFORM_PRESETS.keys())[:MAX_PLATFORMS_PER_REQUEST]
     saved_files = await _save_uploads(files)
     idea = {
         "title": idea_title,
@@ -281,7 +336,7 @@ async def generate_compat(
         # Fall back to ephemeral brand object via branded campaign helper path.
         from .content_engine import build_campaign
 
-        selected = _normalize_platforms(platforms) or list(PLATFORM_PRESETS.keys())
+        selected = _normalize_platforms(platforms) or list(PLATFORM_PRESETS.keys())[:MAX_PLATFORMS_PER_REQUEST]
         saved_files = await _save_uploads(files)
         return build_campaign(
             project_name=project_name,
@@ -295,7 +350,7 @@ async def generate_compat(
             clip_duration=clip_duration,
         )
 
-    selected = _normalize_platforms(platforms) or list(PLATFORM_PRESETS.keys())
+    selected = _normalize_platforms(platforms) or list(PLATFORM_PRESETS.keys())[:MAX_PLATFORMS_PER_REQUEST]
     saved_files = await _save_uploads(files)
     return build_branded_campaign(
         brand=brand,

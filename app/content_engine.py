@@ -157,10 +157,21 @@ def _gradient_background(size: tuple[int, int], top: tuple[int, int, int], botto
     return image
 
 
+def _open_image_limited(path: Path) -> Image.Image:
+    with Image.open(path) as img:
+        width, height = img.size
+        if width * height > MAX_SOURCE_IMAGE_PIXELS:
+            raise ValueError("Source image is too large.")
+        return img.convert("RGB")
+
+
 def _base_canvas(size: tuple[int, int], source_image: Path | None, palette: dict[str, Any]) -> Image.Image:
     if source_image and source_image.exists():
-        with Image.open(source_image) as img:
-            return ImageOps.fit(img.convert("RGB"), size, method=RESAMPLE_METHOD)
+        try:
+            img = _open_image_limited(source_image)
+            return ImageOps.fit(img, size, method=RESAMPLE_METHOD)
+        except Exception:
+            pass
     top = _hex_to_rgb(palette.get("primary", "#0f766e"))
     bottom = _hex_to_rgb(palette.get("secondary", "#134e4a"))
     return _gradient_background(size, top, bottom)
@@ -238,9 +249,22 @@ def render_marketing_image(
     canvas.convert("RGB").save(output_path, format="PNG", optimize=True)
 
 
+FFMPEG_TIMEOUT_SECONDS = 60
+FFPROBE_TIMEOUT_SECONDS = 15
+MAX_SOURCE_IMAGE_PIXELS = 20_000_000
+
+
 def _run_command(command: list[str]) -> None:
     try:
-        subprocess.run(command, check=True, capture_output=True, text=True)
+        subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=FFMPEG_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("Media processing timed out.") from exc
     except subprocess.CalledProcessError as exc:
         stderr = exc.stderr.strip() if exc.stderr else "Unknown ffmpeg error"
         raise RuntimeError(stderr) from exc
@@ -257,7 +281,13 @@ def _probe_duration(video_path: Path) -> float | None:
         "default=nokey=1:noprint_wrappers=1",
         str(video_path),
     ]
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=FFPROBE_TIMEOUT_SECONDS,
+    )
     if result.returncode != 0:
         return None
     try:
@@ -497,7 +527,7 @@ def build_branded_campaign(
     clip_duration: int,
     idea: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    campaign_id = f"{slugify(campaign_title or brand.get('name', 'campaign'))}-{uuid4().hex[:8]}"
+    campaign_id = f"{slugify(campaign_title or brand.get('name', 'campaign'))[:100]}-{uuid4().hex[:8]}"
     campaign_dir = generated_root / campaign_id
     copy_dir = campaign_dir / "copy"
     image_dir = campaign_dir / "images"
@@ -697,9 +727,8 @@ def build_campaign(
 
 def extract_website_metadata(url: str, download_dir: Path, source_index: int) -> dict[str, Any]:
     # Compatibility shim for older API route.
-    from .brand_dna import USER_AGENT, _download_bytes, _save_image
+    from .brand_dna import _download_bytes, _save_image, assert_public_http_url, fetch_public_url
     from urllib.parse import urljoin
-    import requests
     from bs4 import BeautifulSoup
 
     metadata = {
@@ -711,9 +740,12 @@ def extract_website_metadata(url: str, download_dir: Path, source_index: int) ->
         "error": "",
     }
     try:
-        response = requests.get(url, timeout=20, headers={"User-Agent": USER_AGENT})
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, "html.parser")
+        assert_public_http_url(url)
+        fetched = fetch_public_url(url, timeout=20, max_bytes=2_000_000)
+        if not fetched:
+            raise ValueError("Could not safely fetch website URL.")
+        final_url, page_bytes = fetched
+        soup = BeautifulSoup(page_bytes.decode("utf-8", errors="ignore"), "html.parser")
         title = soup.title.string.strip() if soup.title and soup.title.string else ""
         description = ""
         description_meta = soup.find("meta", attrs={"name": "description"})
@@ -723,7 +755,7 @@ def extract_website_metadata(url: str, download_dir: Path, source_index: int) ->
         for attr_set in ({"property": "og:image"}, {"name": "twitter:image"}):
             tag = soup.find("meta", attrs=attr_set)
             if tag and tag.get("content"):
-                source_image = urljoin(str(response.url), tag["content"].strip())
+                source_image = urljoin(final_url, tag["content"].strip())
                 break
         downloaded = None
         if source_image:

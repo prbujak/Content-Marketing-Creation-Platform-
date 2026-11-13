@@ -100,13 +100,71 @@ def _is_near_neutral(hex_color: str) -> bool:
     return s < 0.12 or v < 0.12 or v > 0.95
 
 
-def _download_bytes(url: str, timeout: int = 15) -> bytes | None:
+MAX_DOWNLOAD_BYTES = 8 * 1024 * 1024  # 8 MB cap for secondary assets
+MAX_CSS_BYTES = 500_000
+MAX_PAGE_BYTES = 2_000_000
+MAX_IMAGE_PIXELS = 20_000_000
+
+
+def _stream_limited(response: requests.Response, max_bytes: int) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    for chunk in response.iter_content(chunk_size=64 * 1024):
+        if not chunk:
+            continue
+        total += len(chunk)
+        if total > max_bytes:
+            raise ValueError("Remote response exceeded size limit.")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def fetch_public_url(
+    url: str,
+    *,
+    timeout: int = 15,
+    max_bytes: int = MAX_DOWNLOAD_BYTES,
+    allow_empty: bool = False,
+) -> tuple[str, bytes] | None:
+    """Fetch a URL only if the start and final redirect targets are public http(s)."""
     try:
-        response = requests.get(url, timeout=timeout, headers={"User-Agent": USER_AGENT})
-        response.raise_for_status()
-        return response.content
-    except requests.RequestException:
+        assert_public_http_url(url)
+    except ValueError:
         return None
+
+    try:
+        with requests.get(
+            url,
+            timeout=timeout,
+            headers={"User-Agent": USER_AGENT},
+            allow_redirects=True,
+            stream=True,
+        ) as response:
+            # Re-validate every hop and the final URL to block redirect-based SSRF.
+            for hop in list(response.history) + [response]:
+                try:
+                    assert_public_http_url(str(hop.url))
+                except ValueError:
+                    return None
+            response.raise_for_status()
+            content_length = response.headers.get("Content-Length")
+            if content_length:
+                try:
+                    if int(content_length) > max_bytes:
+                        return None
+                except ValueError:
+                    pass
+            body = _stream_limited(response, max_bytes=max_bytes)
+            if not body and not allow_empty:
+                return None
+            return str(response.url), body
+    except (requests.RequestException, ValueError):
+        return None
+
+
+def _download_bytes(url: str, timeout: int = 15, max_bytes: int = MAX_DOWNLOAD_BYTES) -> bytes | None:
+    result = fetch_public_url(url, timeout=timeout, max_bytes=max_bytes)
+    return result[1] if result else None
 
 
 def _extract_css_blob(soup: BeautifulSoup, base_url: str) -> str:
@@ -119,7 +177,7 @@ def _extract_css_blob(soup: BeautifulSoup, base_url: str) -> str:
         href = link.get("href")
         if "stylesheet" in rel and href:
             absolute = urljoin(base_url, href)
-            content = _download_bytes(absolute, timeout=10)
+            content = _download_bytes(absolute, timeout=10, max_bytes=MAX_CSS_BYTES)
             if content:
                 try:
                     chunks.append(content.decode("utf-8", errors="ignore")[:120000])
@@ -448,6 +506,9 @@ def _save_image(content: bytes, destination: Path) -> Path | None:
     destination.write_bytes(content)
     try:
         with Image.open(destination) as img:
+            width, height = img.size
+            if width * height > MAX_IMAGE_PIXELS:
+                raise ValueError("Image too large")
             img.verify()
         return destination
     except Exception:
@@ -468,14 +529,15 @@ def build_brand_dna(
     image_dir.mkdir(parents=True, exist_ok=True)
 
     website_url = assert_public_http_url(website_url)
-    response = requests.get(website_url, timeout=25, headers={"User-Agent": USER_AGENT}, allow_redirects=True)
-    assert_public_http_url(str(response.url))
-    response.raise_for_status()
-    final_url = str(response.url)
-    soup = BeautifulSoup(response.text, "html.parser")
+    fetched = fetch_public_url(website_url, timeout=25, max_bytes=MAX_PAGE_BYTES)
+    if not fetched:
+        raise ValueError("Could not safely fetch the website URL.")
+    final_url, page_bytes = fetched
+    page_text = page_bytes.decode("utf-8", errors="ignore")
+    soup = BeautifulSoup(page_text, "html.parser")
 
     css_blob = _extract_css_blob(soup, final_url)
-    page_blob = response.text + "\n" + css_blob
+    page_blob = page_text + "\n" + css_blob
     css_colors = _extract_colors_from_text(page_blob)
     fonts = _extract_fonts(css_blob, soup)
     copy = _extract_copy_signals(soup, final_url)
