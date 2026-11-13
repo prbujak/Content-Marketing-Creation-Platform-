@@ -1,42 +1,41 @@
-# eMarketster — Brand DNA Campaign Studio
+# eMarketster — Jasper + Pomelli Workspace
 
-eMarketster replicates the core workflows of **Google Pomelli** and **Jasper**, now with optional **OpenRouter** multi-model AI.
+One app that combines **Google Pomelli** Business DNA creatives with **Jasper** multi-channel content operations.
 
-## What you get
+## Dual-world feature map
 
-1. **Business DNA** from a website (voice, palette, fonts, imagery)
-2. **Campaign ideas** (AI when OpenRouter is configured)
-3. **Multi-channel packs** — social, email, blog, ads, landing
-4. **Creatives** — on-brand images + 8–12s clips
-5. **Catalog** for products/services
-6. **Creative editor** to revise headline/body/CTA and regenerate AI images
+### Pomelli side
+- Business DNA from website
+- Brand Agent chat to refine DNA
+- Catalog / product ingredients
+- Campaign ideas + branded creatives
+- Photoshoot generator
+- Brand book export
+- Mini website generator
+- 8–12s animated clips
 
-## OpenRouter setup (multi-model)
+### Jasper side
+- Brand voice + knowledge base
+- Audiences
+- Instant Magic content apps (LinkedIn, email, blog, landing, SEO, ads, PR, etc.)
+- Social calendar planning
+- Localization
+- Content library
+- Campaign channel packs (social/email/blog/ads/landing)
 
-Add this secret in Cursor (Secrets / publish bindings):
+## OpenRouter
 
-- `OPENROUTER_API_KEY`
+Secret: `OPENROUTER_API_KEY`
 
-Optional env overrides:
-
+Optional:
 - `OPENROUTER_TEXT_MODEL` (default `openai/gpt-4o-mini`)
 - `OPENROUTER_IMAGE_MODEL` (default `google/gemini-2.5-flash-image-preview`)
 
-Without a key, eMarketster still runs in **sample/template mode**.
+Runs in sample/template mode without a key.
 
-OpenRouter can route across many models; eMarketster sends fallback model lists automatically.
-
-## Run locally
+## Run
 
 ```bash
 python3 -m pip install --user -r requirements.txt
 python3 -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
-
-Open http://localhost:8000
-
-## Security notes
-
-- Outbound website/asset fetches validate public http(s) targets and redirect hops
-- Storage IDs are sanitized with path containment checks
-- Uploads and ffmpeg/image work are size/timeout limited

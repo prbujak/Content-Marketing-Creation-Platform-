@@ -602,3 +602,39 @@ label.full, .actions.full { grid-column: 1 / -1; }
 }
 
 .links .btn { padding: 0.35rem 0.65rem; font-size: 0.85rem; }
+
+.panel-section { display:none; }
+.panel-section.active-panel { display:block; animation: rise .45s ease both; }
+.chat-log {
+  min-height: 180px;
+  max-height: 320px;
+  overflow:auto;
+  border:1px solid var(--line);
+  border-radius:14px;
+  background:#fff;
+  padding:.8rem;
+  display:grid;
+  gap:.55rem;
+  margin-bottom:.8rem;
+}
+.chat-bubble {
+  border-radius:12px;
+  padding:.65rem .75rem;
+  background:#f4faf6;
+}
+.chat-bubble.user { background:#e8f2ff; }
+.tool-grid {
+  display:grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap:.8rem;
+}
+.tool-grid form {
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:.8rem;
+  background:#fff;
+  display:grid;
+  gap:.45rem;
+}
+.tool-grid h3 { margin:0; font-family: var(--font-display); }
+.topnav { flex-wrap: wrap; }

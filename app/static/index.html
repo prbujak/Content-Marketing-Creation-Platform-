@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>eMarketster — Brand DNA Campaign Studio</title>
+    <title>eMarketster — Jasper + Pomelli Workspace</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -18,9 +18,11 @@
     <header class="topbar">
       <a class="wordmark" href="#top">eMarketster</a>
       <nav class="topnav" aria-label="Primary">
-        <a href="#studio">Studio</a>
-        <a href="#dna">Brand DNA</a>
-        <a href="#campaigns">Campaigns</a>
+        <a href="#studio" data-panel="studio">Studio</a>
+        <a href="#agent" data-panel="agent">Brand Agent</a>
+        <a href="#audiences" data-panel="audiences">Audiences</a>
+        <a href="#magic" data-panel="magic">Instant Magic</a>
+        <a href="#library" data-panel="library">Library</a>
       </nav>
     </header>
 
@@ -28,14 +30,14 @@
       <section class="hero" aria-label="eMarketster hero">
         <div class="hero-copy">
           <p class="brand-mark">eMarketster</p>
-          <h1>On-brand campaigns from your Business DNA.</h1>
+          <h1>Jasper + Pomelli in one workspace.</h1>
           <p class="lede">
-            Paste a website. eMarketster extracts brand voice, colors, and imagery—then builds Jasper-style
-            multi-channel packs and Pomelli-style creatives, including 8–12s clips.
+            Build Business DNA, brief campaigns, generate multi-channel packs, photoshoots, brand books,
+            and Instant Magic content apps — powered by OpenRouter.
           </p>
           <div class="cta-row">
-            <a class="btn primary" href="#studio">Build Brand DNA</a>
-            <a class="btn ghost" href="#campaigns">Open Campaign Studio</a>
+            <a class="btn primary" href="#studio" data-panel="studio">Open Studio</a>
+            <a class="btn ghost" href="#magic" data-panel="magic">Try Instant Magic</a>
           </div>
         </div>
         <div class="hero-visual" aria-hidden="true">
@@ -45,13 +47,13 @@
             <span class="ring ring-c"></span>
             <div class="orb-core">
               <strong>Business DNA</strong>
-              <small>voice · palette · assets</small>
+              <small>voice · palette · campaigns</small>
             </div>
           </div>
         </div>
       </section>
 
-      <section id="studio" class="workspace">
+      <section id="studio" class="workspace panel-section active-panel" data-panel-section="studio">
         <div id="ai-status" class="ai-status">Checking AI provider...</div>
         <div class="stepper" role="tablist" aria-label="eMarketster workflow">
           <button class="step active" data-step="1" role="tab" aria-selected="true">1. Brand DNA</button>
@@ -87,7 +89,7 @@
 
           <div class="composer" id="catalog-panel">
             <h3>Product Catalog</h3>
-            <p class="muted">Add products/services to ground campaigns (Pomelli-style ingredients).</p>
+            <p class="muted">Add products/services as campaign ingredients.</p>
             <form id="catalog-form" class="split">
               <label>
                 Product name
@@ -138,7 +140,6 @@
             <h2>Generate campaign ideas</h2>
             <p>Jasper-style briefing: pick a tailored idea or write your own campaign prompt.</p>
           </div>
-
           <form id="ideas-form" class="composer">
             <div class="split">
               <label>
@@ -154,7 +155,6 @@
               <button type="submit" class="btn primary" id="ideas-btn">Generate Ideas</button>
             </div>
           </form>
-
           <div id="ideas-grid" class="ideas-grid"></div>
         </section>
 
@@ -163,7 +163,6 @@
             <h2>Create branded creatives</h2>
             <p>Multi-channel pack: social, email, blog, ads, landing copy, images, and 8–12s clips.</p>
           </div>
-
           <form id="campaign-form" class="composer">
             <div class="split">
               <label>
@@ -175,12 +174,10 @@
                 <input id="campaign-cta" name="call_to_action" type="text" value="Book a demo" />
               </label>
             </div>
-
             <label>
               Campaign brief
               <textarea id="campaign-brief" name="brief" rows="3" placeholder="What should this campaign say and sell?"></textarea>
             </label>
-
             <div class="split">
               <label>
                 Clip duration
@@ -194,24 +191,171 @@
                 <input id="files" name="files" type="file" multiple accept="image/*,video/*" />
               </label>
             </div>
-
             <fieldset class="platform-picker">
               <legend>Channels</legend>
               <div id="platforms-container" class="platform-list"></div>
             </fieldset>
-
             <div class="actions">
               <button type="submit" class="btn primary" id="generate-btn">Generate Campaign Pack</button>
             </div>
           </form>
-
           <div id="channel-pack" class="channel-pack hidden"></div>
           <div id="results-container" class="results-grid"></div>
         </section>
       </section>
 
+      <section id="agent" class="workspace panel-section" data-panel-section="agent">
+        <div class="stage-head">
+          <h2>Brand Agent</h2>
+          <p>Chat to refine Business DNA — voice, values, CTA, and positioning.</p>
+        </div>
+        <div class="composer">
+          <div id="agent-chat" class="chat-log"></div>
+          <form id="agent-form" class="split">
+            <label class="full">
+              Message
+              <input id="agent-message" type="text" placeholder="Make the voice more premium and shorten the CTA" required />
+            </label>
+            <div class="actions full">
+              <button class="btn primary" type="submit">Send to Brand Agent</button>
+            </div>
+          </form>
+        </div>
+        <div class="composer">
+          <h3>Knowledge Base</h3>
+          <form id="knowledge-form" class="split">
+            <label>
+              Title
+              <input id="knowledge-title" type="text" placeholder="Offer one-pager" required />
+            </label>
+            <label class="full">
+              Notes / docs paste
+              <textarea id="knowledge-body" rows="4" placeholder="Paste brand guidelines, claims, product docs..." required></textarea>
+            </label>
+            <div class="actions full">
+              <button class="btn primary" type="submit">Save Knowledge</button>
+            </div>
+          </form>
+          <div id="knowledge-list" class="catalog-list"></div>
+        </div>
+      </section>
+
+      <section id="audiences" class="workspace panel-section" data-panel-section="audiences">
+        <div class="stage-head">
+          <h2>Audiences</h2>
+          <p>Jasper-style audience profiles to personalize Instant Magic and campaigns.</p>
+        </div>
+        <form id="audience-form" class="composer split">
+          <label>
+            Audience name
+            <input id="audience-name" type="text" placeholder="Finance operators" required />
+          </label>
+          <label>
+            Preferred channels
+            <input id="audience-channels" type="text" placeholder="LinkedIn, Email" />
+          </label>
+          <label class="full">
+            Description
+            <input id="audience-description" type="text" placeholder="Who they are" />
+          </label>
+          <label>
+            Pains
+            <input id="audience-pains" type="text" placeholder="Manual reconciliation, slow close" />
+          </label>
+          <label>
+            Desires
+            <input id="audience-desires" type="text" placeholder="Trust, speed, clarity" />
+          </label>
+          <div class="actions full">
+            <button class="btn primary" type="submit">Save Audience</button>
+          </div>
+        </form>
+        <div id="audience-list" class="catalog-list"></div>
+      </section>
+
+      <section id="magic" class="workspace panel-section" data-panel-section="magic">
+        <div class="stage-head">
+          <h2>Instant Magic + Creative Systems</h2>
+          <p>Jasper content apps, Pomelli photoshoot/brand book/website, calendars, and localization.</p>
+        </div>
+        <form id="magic-form" class="composer">
+          <div class="split">
+            <label>
+              Content app
+              <select id="magic-app"></select>
+            </label>
+            <label>
+              Language
+              <input id="magic-language" type="text" value="English" />
+            </label>
+          </div>
+          <div class="split">
+            <label>
+              Audience ID (optional)
+              <input id="magic-audience" type="text" placeholder="aud-..." />
+            </label>
+            <label>
+              Product focus
+              <input id="magic-product" type="text" placeholder="Product name" />
+            </label>
+          </div>
+          <label>
+            Brief
+            <textarea id="magic-brief" rows="3" placeholder="What should this asset accomplish?"></textarea>
+          </label>
+          <div class="actions">
+            <button class="btn primary" type="submit">Generate with Instant Magic</button>
+          </div>
+        </form>
+
+        <div class="composer tool-grid">
+          <form id="calendar-form">
+            <h3>Social Calendar</h3>
+            <input id="calendar-title" type="text" placeholder="Campaign title" />
+            <input id="calendar-brief" type="text" placeholder="Brief" />
+            <input id="calendar-days" type="number" min="3" max="14" value="7" />
+            <button class="btn primary" type="submit">Build Calendar</button>
+          </form>
+          <form id="photoshoot-form">
+            <h3>Photoshoot</h3>
+            <input id="shoot-product" type="text" placeholder="Product name" />
+            <input id="shoot-desc" type="text" placeholder="Product description" />
+            <input id="shoot-style" type="text" value="clean product studio" />
+            <button class="btn primary" type="submit">Generate Photoshoot</button>
+          </form>
+          <form id="book-form">
+            <h3>Brand Book</h3>
+            <p class="muted">Export voice, story, and palette.</p>
+            <button class="btn primary" type="submit">Generate Brand Book</button>
+          </form>
+          <form id="website-form">
+            <h3>Website</h3>
+            <p class="muted">One-page site from Business DNA.</p>
+            <button class="btn primary" type="submit">Generate Website</button>
+          </form>
+          <form id="localize-form">
+            <h3>Localize</h3>
+            <textarea id="localize-text" rows="3" placeholder="Paste copy to localize"></textarea>
+            <input id="localize-language" type="text" value="Spanish" />
+            <button class="btn primary" type="submit">Localize Copy</button>
+          </form>
+        </div>
+        <div id="magic-output" class="channel-pack"></div>
+      </section>
+
+      <section id="library" class="workspace panel-section" data-panel-section="library">
+        <div class="stage-head">
+          <h2>Content Library</h2>
+          <p>All Instant Magic assets, calendars, photoshoots, brand books, and websites.</p>
+        </div>
+        <div class="actions" style="margin-bottom:0.8rem">
+          <button type="button" class="btn ghost" id="refresh-library">Refresh Library</button>
+        </div>
+        <div id="library-list" class="results-grid"></div>
+      </section>
+
       <section class="status-dock">
-        <pre id="status-box">Ready. Welcome to eMarketster. Start by extracting Brand DNA from a website.</pre>
+        <pre id="status-box">Ready. Start by extracting Brand DNA, then explore Brand Agent + Instant Magic.</pre>
       </section>
     </main>
 

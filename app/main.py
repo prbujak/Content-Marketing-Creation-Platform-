@@ -19,15 +19,33 @@ from .content_engine import (
     parse_links,
 )
 from .storage import (
+    get_audience,
     get_brand,
     get_campaign,
+    get_content,
+    list_audiences,
     list_brands,
     list_campaigns,
     list_catalog,
+    list_content,
+    list_knowledge,
     sanitize_id,
+    save_audience,
     save_campaign,
     save_catalog_item,
+    save_content,
+    save_knowledge,
     update_brand,
+)
+from .studio_features import (
+    CONTENT_APPS,
+    brand_agent_turn,
+    build_social_calendar,
+    generate_brand_book,
+    generate_mini_website,
+    generate_photoshoot,
+    instant_magic,
+    localize_text,
 )
 
 
@@ -89,6 +107,64 @@ class CreativeEditRequest(BaseModel):
     body: str = ""
     cta: str = ""
     regenerate_ai_image: bool = True
+
+
+class BrandAgentRequest(BaseModel):
+    brand_id: str
+    message: str
+
+
+class AudienceRequest(BaseModel):
+    brand_id: str
+    name: str
+    description: str = ""
+    pains: str = ""
+    desires: str = ""
+    channels: str = ""
+
+
+class KnowledgeRequest(BaseModel):
+    brand_id: str
+    title: str
+    body: str
+
+
+class InstantMagicRequest(BaseModel):
+    brand_id: str
+    app_key: str
+    brief: str = ""
+    audience_id: str = ""
+    product_name: str = ""
+    language: str = "English"
+
+
+class LocalizeRequest(BaseModel):
+    brand_id: str
+    text: str
+    language: str = "Spanish"
+
+
+class CalendarRequest(BaseModel):
+    brand_id: str
+    campaign_title: str = "Weekly Pulse"
+    brief: str = ""
+    days: int = 7
+
+
+class PhotoshootRequest(BaseModel):
+    brand_id: str
+    product_name: str = ""
+    product_description: str = ""
+    style: str = "clean product studio"
+    count: int = 3
+
+
+class BrandBookRequest(BaseModel):
+    brand_id: str
+
+
+class WebsiteRequest(BaseModel):
+    brand_id: str
 
 
 class CampaignGenerateRequest(BaseModel):
@@ -422,6 +498,190 @@ def api_edit_creative(payload: CreativeEditRequest) -> dict:
             break
     save_campaign(campaign)
     return {"campaign": campaign, "result": result_item}
+
+
+
+@app.get("/api/content-apps")
+def api_content_apps() -> dict:
+    return {"apps": CONTENT_APPS}
+
+
+@app.get("/api/audiences")
+def api_list_audiences(brand_id: str | None = None) -> dict:
+    if brand_id:
+        try:
+            brand_id = sanitize_id(brand_id, label="brand_id")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"audiences": list_audiences(brand_id)}
+
+
+@app.post("/api/audiences")
+def api_create_audience(payload: AudienceRequest) -> dict:
+    _require_brand(payload.brand_id)
+    try:
+        return save_audience(payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/knowledge")
+def api_list_knowledge(brand_id: str | None = None) -> dict:
+    if brand_id:
+        try:
+            brand_id = sanitize_id(brand_id, label="brand_id")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"items": list_knowledge(brand_id)}
+
+
+@app.post("/api/knowledge")
+def api_create_knowledge(payload: KnowledgeRequest) -> dict:
+    _require_brand(payload.brand_id)
+    body = payload.body.strip()
+    if len(body) > 20000:
+        raise HTTPException(status_code=400, detail="Knowledge body too large (20k chars max).")
+    try:
+        return save_knowledge(payload.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/content-library")
+def api_content_library(brand_id: str | None = None) -> dict:
+    if brand_id:
+        try:
+            brand_id = sanitize_id(brand_id, label="brand_id")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"items": list_content(brand_id)}
+
+
+@app.get("/api/content-library/{content_id}")
+def api_get_content(content_id: str) -> dict:
+    try:
+        sanitize_id(content_id, label="content_id")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    item = get_content(content_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Content not found.")
+    return item
+
+
+@app.post("/api/brand-agent")
+def api_brand_agent(payload: BrandAgentRequest) -> dict:
+    brand = _require_brand(payload.brand_id)
+    message = payload.message.strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Message is required.")
+    if len(message) > 4000:
+        raise HTTPException(status_code=400, detail="Message too long.")
+    knowledge = list_knowledge(brand["id"])
+    try:
+        return brand_agent_turn(brand, message, knowledge=knowledge)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        raise HTTPException(status_code=500, detail=f"Brand Agent failed: {exc}") from exc
+
+
+@app.post("/api/instant-magic")
+def api_instant_magic(payload: InstantMagicRequest) -> dict:
+    brand = _require_brand(payload.brand_id)
+    audience = None
+    if payload.audience_id:
+        try:
+            audience = get_audience(payload.audience_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    product = {"name": payload.product_name} if payload.product_name else None
+    try:
+        item = instant_magic(
+            brand=brand,
+            app_key=payload.app_key,
+            brief=payload.brief,
+            audience=audience,
+            product=product,
+            language=payload.language or "English",
+        )
+        return item
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        raise HTTPException(status_code=500, detail=f"Instant Magic failed: {exc}") from exc
+
+
+@app.post("/api/localize")
+def api_localize(payload: LocalizeRequest) -> dict:
+    brand = _require_brand(payload.brand_id)
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Text is required.")
+    localized = localize_text(text, payload.language, brand)
+    item = save_content(
+        {
+            "brand_id": brand["id"],
+            "app_key": "localization",
+            "app_label": f"Localized ({payload.language})",
+            "family": "localization",
+            "language": payload.language,
+            "title": f"Localized to {payload.language}",
+            "body": localized,
+            "summary": text[:160],
+            "extras": {"source_language": "original"},
+        }
+    )
+    return {"localized": localized, "item": item}
+
+
+@app.post("/api/social-calendar")
+def api_social_calendar(payload: CalendarRequest) -> dict:
+    brand = _require_brand(payload.brand_id)
+    try:
+        return build_social_calendar(
+            brand=brand,
+            campaign_title=payload.campaign_title or f"{brand.get('name')} Calendar",
+            brief=payload.brief or brand.get("description") or "",
+            days=payload.days,
+        )
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        raise HTTPException(status_code=500, detail=f"Calendar failed: {exc}") from exc
+
+
+@app.post("/api/photoshoot")
+def api_photoshoot(payload: PhotoshootRequest) -> dict:
+    brand = _require_brand(payload.brand_id)
+    product = {
+        "name": payload.product_name or brand.get("name"),
+        "description": payload.product_description or brand.get("description"),
+    }
+    try:
+        return generate_photoshoot(
+            brand=brand,
+            product=product,
+            output_root=GENERATED_DIR,
+            style=payload.style,
+            count=payload.count,
+        )
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        raise HTTPException(status_code=500, detail=f"Photoshoot failed: {exc}") from exc
+
+
+@app.post("/api/brand-book")
+def api_brand_book(payload: BrandBookRequest) -> dict:
+    brand = _require_brand(payload.brand_id)
+    try:
+        return generate_brand_book(brand, GENERATED_DIR)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        raise HTTPException(status_code=500, detail=f"Brand book failed: {exc}") from exc
+
+
+@app.post("/api/website")
+def api_website(payload: WebsiteRequest) -> dict:
+    brand = _require_brand(payload.brand_id)
+    try:
+        return generate_mini_website(brand, GENERATED_DIR)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        raise HTTPException(status_code=500, detail=f"Website generation failed: {exc}") from exc
 
 
 # Compatibility endpoint kept for older clients.
