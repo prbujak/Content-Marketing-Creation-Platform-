@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import html
 import json
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -227,28 +229,52 @@ def build_social_calendar(
     return save_content(payload)
 
 
+def _safe_text(value: Any) -> str:
+    return html.escape(str(value or ""), quote=True)
+
+
+def _safe_color(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not re.fullmatch(r"#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})", raw):
+        return "#0f766e"
+    return raw
+
+
 def generate_brand_book(brand: dict[str, Any], output_root: Path) -> dict[str, Any]:
     voice = brand.get("voice") or {}
     palette = brand.get("palette") or {}
+    name = _safe_text(brand.get("name"))
+    tagline = _safe_text(brand.get("tagline"))
+    description = _safe_text(brand.get("description"))
+    cta = _safe_text(brand.get("cta") or "Learn more")
+    primary_tone = _safe_text(voice.get("primary_tone"))
+    secondary_tone = _safe_text(voice.get("secondary_tone"))
+    rules = "".join(f"<li>{_safe_text(rule)}</li>" for rule in (voice.get("style_rules") or [])[:6])
+    swatches = "".join(
+        f"<span class='swatch' style='background:{_safe_color(color)}' title='{_safe_text(color)}'></span>"
+        for color in (palette.get("all") or [])[:6]
+    )
     html = f"""<!doctype html>
-<html><head><meta charset='utf-8'><title>{brand.get('name')} Brand Book</title>
+<html><head><meta charset='utf-8'>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data: https:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
+<title>{name} Brand Book</title>
 <style>
 body{{font-family:Georgia,serif;margin:40px;color:#10231f;background:#f7faf8}}
 h1,h2{{font-family:Helvetica,Arial,sans-serif}}
 .swatch{{display:inline-block;width:64px;height:64px;border-radius:12px;margin-right:8px;border:1px solid #ccc}}
 .card{{border:1px solid #d7e3dc;border-radius:16px;padding:16px;margin:16px 0;background:#fff}}
 </style></head><body>
-<h1>{brand.get('name')} Brand Book</h1>
-<p><em>{brand.get('tagline') or ''}</em></p>
-<div class='card'><h2>Brand Story</h2><p>{brand.get('description') or ''}</p></div>
+<h1>{name} Brand Book</h1>
+<p><em>{tagline}</em></p>
+<div class='card'><h2>Brand Story</h2><p>{description}</p></div>
 <div class='card'><h2>Voice</h2>
-<p>{voice.get('primary_tone')} · {voice.get('secondary_tone')}</p>
-<ul>{''.join(f'<li>{rule}</li>' for rule in (voice.get('style_rules') or [])[:6])}</ul>
+<p>{primary_tone} · {secondary_tone}</p>
+<ul>{rules}</ul>
 </div>
 <div class='card'><h2>Palette</h2>
-{''.join(f"<span class='swatch' style='background:{color}' title='{color}'></span>" for color in (palette.get('all') or [])[:6])}
+{swatches}
 </div>
-<div class='card'><h2>CTA</h2><p>{brand.get('cta') or 'Learn more'}</p></div>
+<div class='card'><h2>CTA</h2><p>{cta}</p></div>
 </body></html>"""
 
     book_id = f"brandbook-{uuid4().hex[:8]}"
@@ -257,9 +283,9 @@ h1,h2{{font-family:Helvetica,Arial,sans-serif}}
     html_path = out_dir / "brand-book.html"
     html_path.write_text(html, encoding="utf-8")
     md = (
-        f"# {brand.get('name')} Brand Book\n\n"
-        f"{brand.get('tagline')}\n\n"
-        f"## Story\n{brand.get('description')}\n\n"
+        f"# {brand.get('name') or 'Brand'} Brand Book\n\n"
+        f"{brand.get('tagline') or ''}\n\n"
+        f"## Story\n{brand.get('description') or ''}\n\n"
         f"## Voice\n{voice}\n\n"
         f"## Palette\n{palette}\n"
     )
@@ -381,11 +407,22 @@ def generate_mini_website(brand: dict[str, Any], output_root: Path) -> dict[str,
     site_dir = output_root / site_id
     site_dir.mkdir(parents=True, exist_ok=True)
     palette = brand.get("palette") or {}
+    name = _safe_text(brand.get("name"))
+    tagline = _safe_text(brand.get("tagline"))
+    description = _safe_text(brand.get("description"))
+    cta = _safe_text(brand.get("cta") or "Get started")
+    primary = _safe_color(palette.get("primary", "#0f766e"))
+    accent = _safe_color(palette.get("accent", "#f59e0b"))
+    values = "".join(
+        f"<li>{_safe_text(value)}</li>"
+        for value in (brand.get("values") or brand.get("keywords") or [])[:5]
+    )
     html = f"""<!doctype html>
 <html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'>
-<title>{brand.get('name')}</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data: https:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
+<title>{name}</title>
 <style>
-:root{{--p:{palette.get('primary', '#0f766e')};--a:{palette.get('accent', '#f59e0b')};--ink:#10231f}}
+:root{{--p:{primary};--a:{accent};--ink:#10231f}}
 body{{margin:0;font-family:Helvetica,Arial,sans-serif;color:var(--ink);background:linear-gradient(180deg,#f3f7f4,#e7f0ea)}}
 .hero{{min-height:80vh;display:grid;place-content:center;padding:2rem;text-align:center}}
 h1{{font-size:clamp(2rem,6vw,4rem);margin:0 0 .5rem}}
@@ -394,14 +431,14 @@ a.cta{{display:inline-block;background:var(--p);color:#fff;text-decoration:none;
 section{{padding:2.5rem 1.2rem;max-width:900px;margin:0 auto}}
 </style></head><body>
 <header class='hero'>
-  <h1>{brand.get('name')}</h1>
-  <p>{brand.get('tagline') or ''}</p>
-  <p>{brand.get('description') or ''}</p>
-  <a class='cta' href='#'>{brand.get('cta') or 'Get started'}</a>
+  <h1>{name}</h1>
+  <p>{tagline}</p>
+  <p>{description}</p>
+  <a class='cta' href='#'>{cta}</a>
 </header>
 <section>
-  <h2>Why {brand.get('name')}</h2>
-  <ul>{''.join(f'<li>{value}</li>' for value in (brand.get('values') or brand.get('keywords') or [])[:5])}</ul>
+  <h2>Why {name}</h2>
+  <ul>{values}</ul>
 </section>
 </body></html>"""
     (site_dir / "index.html").write_text(html, encoding="utf-8")

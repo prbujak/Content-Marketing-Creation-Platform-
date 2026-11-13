@@ -5,12 +5,14 @@ import shutil
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .ai import ai_status
+from .auth import verify_request_identity
+from .rate_limit import enforce_expensive_rate_limit
 from .brand_dna import brand_summary, build_brand_dna
 from .content_engine import (
     PLATFORM_PRESETS,
@@ -68,6 +70,45 @@ app = FastAPI(
 )
 app.mount("/generated", StaticFiles(directory=str(GENERATED_DIR)), name="generated")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.middleware("http")
+async def security_middleware(request, call_next):
+    path = request.url.path or "/"
+
+    # Protect all API routes with caller identity checks.
+    if path.startswith("/api/"):
+        try:
+            identity = verify_request_identity(request)
+            request.state.identity = identity
+            enforce_expensive_rate_limit(request, identity_sub=str(identity.get("sub") or "anonymous"))
+        except HTTPException as exc:
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+    response = await call_next(request)
+
+    # Harden generated HTML exports at the response layer too.
+    if path.startswith("/generated/") and (path.endswith(".html") or path.endswith("/")):
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'none'; style-src 'unsafe-inline'; img-src data: https:; "
+            "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+        )
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+@app.get("/api/me")
+def api_me(request: Request) -> dict:
+    identity = getattr(request.state, "identity", None) or verify_request_identity(request)
+    return {
+        "authenticated": bool(identity.get("verified")),
+        "simulated": bool(identity.get("simulated")),
+        "name": identity.get("name") or "",
+        "email": identity.get("email") or "",
+        "kind": identity.get("kind") or "",
+    }
+
 
 
 class BrandDNARequest(BaseModel):
