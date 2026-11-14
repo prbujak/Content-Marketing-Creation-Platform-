@@ -4,3 +4,7 @@ pillow
 python-multipart
 requests
 uvicorn[standard]
+PyJWT
+cryptography
+
+psycopg[binary,pool]

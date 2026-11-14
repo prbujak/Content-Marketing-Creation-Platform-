@@ -8,3 +8,17 @@ app/generated/*
 
 app/uploads/*
 !app/uploads/.gitkeep
+
+app/data/brands/*
+!app/data/brands/.gitkeep
+app/data/campaigns/*
+!app/data/campaigns/.gitkeep
+app/data/catalog/*
+!app/data/catalog/.gitkeep
+
+app/data/audiences/*
+!app/data/audiences/.gitkeep
+app/data/knowledge/*
+!app/data/knowledge/.gitkeep
+app/data/content/*
+!app/data/content/.gitkeep

@@ -1,76 +1,56 @@
-# Marketing Content Studio
+# eMarketster — Jasper + Pomelli Workspace
 
-A full-stack app for generating marketing assets across major social platforms.
+One app that combines **Google Pomelli** Business DNA creatives with **Jasper** multi-channel content operations.
 
-## What it does
+## Dual-world feature map
 
-- Generates campaign-ready **images** for Instagram, Facebook, TikTok, YouTube Shorts, LinkedIn, X, and Pinterest.
-- Generates **8-12 second MP4 clips** for the same platforms.
-- Accepts **file uploads** (images/videos) as source media.
-- Accepts **website links** to extract title, description, and open-graph images for content generation.
-- Produces per-platform output:
-  - post copy
-  - downloadable image
-  - downloadable short clip
+### Pomelli side
+- Business DNA from website
+- Brand Agent chat to refine DNA
+- Catalog / product ingredients
+- Campaign ideas + branded creatives
+- Photoshoot generator
+- Brand book export
+- Mini website generator
+- 8–12s animated clips
 
-## Tech stack
+### Jasper side
+- Brand voice + knowledge base
+- Audiences
+- Instant Magic content apps (LinkedIn, email, blog, landing, SEO, ads, PR, etc.)
+- Social calendar planning
+- Localization
+- Content library
+- Campaign channel packs (social/email/blog/ads/landing)
 
-- Backend: FastAPI
-- Frontend: Vanilla HTML/CSS/JS
-- Media processing: Pillow + ffmpeg
-- Website parsing: requests + BeautifulSoup
+## Production behavior
+
+- Cursor identity required on all `/api/*` routes in published/hosted runtimes (JWT locked to RS256)
+- Per-user data scoping by signed-in identity
+- Durable Postgres when `DATABASE_URL` is present (declared via `cursor-app.json`); local/dev falls back to filesystem JSON
+- Rate limits on expensive generation routes
+- HTML exports escaped with CSP
+- OpenRouter multi-model AI with sample fallback when no key is bound
+
+## Secrets
+
+Required for live AI:
+
+- `OPENROUTER_API_KEY`
+
+Optional:
+
+- `OPENROUTER_TEXT_MODEL` (default `openai/gpt-4o-mini`)
+- `OPENROUTER_IMAGE_MODEL` (default `google/gemini-2.5-flash-image-preview`)
+- `OPENROUTER_HTTP_REFERER`
+
+`DATABASE_URL` is provided by Cursor when the app database is enabled. Do not put it in files.
 
 ## Run locally
 
-1. Install dependencies (venv option):
+```bash
+python3 -m pip install --user -r requirements.txt
+python3 -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
 
-   ```bash
-   python3 -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
-   ```
-
-   If your environment does not have `python3-venv`, install packages directly:
-
-   ```bash
-   python3 -m pip install --user -r requirements.txt
-   ```
-
-2. Start the app:
-
-   ```bash
-   python3 -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-   ```
-
-3. Open:
-
-   ```text
-   http://localhost:8000
-   ```
-
-## API endpoints
-
-- `GET /api/platforms`  
-  Returns supported platform presets.
-
-- `POST /api/website-insights`  
-  Body: `{ "links": "https://example.com, https://another.com" }`  
-  Returns scraped metadata.
-
-- `POST /api/generate` (multipart form)  
-  Fields:
-  - `project_name` (required if brand name absent)
-  - `brand_name`
-  - `product_description`
-  - `call_to_action`
-  - `website_links` (comma/newline separated)
-  - `clip_duration` (8-12)
-  - `platforms` (repeat field)
-  - `files` (multiple uploads)
-
-Generated assets are served from `/generated/<campaign-id>/...`.
-
-## Notes
-
-- ffmpeg must be available on your machine (already available in this cloud environment).
-- The app currently uses template-based copy generation and website metadata extraction.
+Health check: `GET /health`
