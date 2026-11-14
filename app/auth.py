@@ -10,14 +10,25 @@ from fastapi import HTTPException, Request
 
 
 _JWKS_CACHE: dict[str, Any] = {"fetched_at": 0.0, "keys": {}}
+_ALLOWED_ALGORITHMS = ["RS256"]
+_DEFAULT_ISSUER = "https://api.cursor.com/apps/identity"
 
 
-def _is_published_runtime() -> bool:
-    return bool((os.getenv("CURSOR_APP_ID") or "").strip())
+def _is_local_dev() -> bool:
+    """Allow simulated identity only on a true local runtime.
+
+    Mirrors cursor/identity.js: any published/hosted marker (CURSOR_APP_ID or
+    VERCEL) forces real token verification and never trusts a simulated user.
+    """
+    if (os.getenv("CURSOR_APP_ID") or "").strip():
+        return False
+    if (os.getenv("VERCEL") or "").strip():
+        return False
+    return True
 
 
 def _issuer() -> str:
-    return (os.getenv("CURSOR_APP_IDENTITY_ISSUER") or "").rstrip("/")
+    return (os.getenv("CURSOR_APP_IDENTITY_ISSUER") or _DEFAULT_ISSUER).rstrip("/")
 
 
 def _get_jwks() -> dict[str, Any]:
@@ -25,8 +36,6 @@ def _get_jwks() -> dict[str, Any]:
     if _JWKS_CACHE["keys"] and now - float(_JWKS_CACHE["fetched_at"]) < 3600:
         return _JWKS_CACHE["keys"]
     issuer = _issuer()
-    if not issuer:
-        return {}
     response = requests.get(f"{issuer}/keys", timeout=10)
     response.raise_for_status()
     payload = response.json()
@@ -65,8 +74,8 @@ def _simulate_local_identity() -> dict[str, Any]:
 
 
 def verify_request_identity(request: Request) -> dict[str, Any]:
-    """Require a verified Cursor identity in published runtime; simulate locally."""
-    if not _is_published_runtime():
+    """Require a verified Cursor identity outside local development."""
+    if _is_local_dev():
         return _simulate_local_identity()
 
     token = _extract_token(request)
@@ -74,12 +83,18 @@ def verify_request_identity(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=401, detail="Authentication required.")
 
     app_id = (os.getenv("CURSOR_APP_ID") or "").strip()
-    issuer = _issuer()
-    if not app_id or not issuer:
+    if not app_id:
+        # Hosted runtime without app id must fail closed — never simulate.
         raise HTTPException(status_code=401, detail="Identity configuration unavailable.")
+
+    issuer = _issuer()
 
     try:
         header = jwt.get_unverified_header(token)
+        alg = header.get("alg")
+        if alg not in _ALLOWED_ALGORITHMS:
+            raise HTTPException(status_code=401, detail="Unsupported identity token algorithm.")
+
         kid = header.get("kid")
         keys = _get_jwks()
         jwk = keys.get(kid) if kid else None
@@ -95,7 +110,7 @@ def verify_request_identity(request: Request) -> dict[str, Any]:
         claims = jwt.decode(
             token,
             key=public_key,
-            algorithms=[header.get("alg") or "RS256"],
+            algorithms=_ALLOWED_ALGORITHMS,
             audience=app_id,
             issuer=issuer,
             options={"require": ["exp", "iat", "sub"]},
