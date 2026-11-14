@@ -22,6 +22,11 @@ CONTENT_DIR = DATA_DIR / "content"
 
 SAFE_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$")
 
+
+class OwnershipError(PermissionError):
+    """Raised when a caller attempts to mutate or read another user's record."""
+
+
 KIND_DIRS = {
     "brand": BRANDS_DIR,
     "campaign": CAMPAIGNS_DIR,
@@ -93,15 +98,22 @@ def _upsert_record(kind: str, payload: dict[str, Any], *, owner_id: str) -> dict
         payload["brand_id"] = sanitize_id(str(brand_id), label="brand_id")
 
     if db.using_postgres():
+        existing = db.fetch_one(
+            "select owner_id from records where kind = %s and id = %s",
+            (kind, item_id),
+        )
+        if existing and str(existing.get("owner_id") or "") != owner:
+            raise OwnershipError("Record belongs to another user.")
+        # Never reassign owner_id on conflict; only mutate rows the caller owns.
         db.execute(
             """
             insert into records (kind, id, owner_id, brand_id, payload, updated_at)
             values (%s, %s, %s, %s, %s::jsonb, now())
             on conflict (kind, id) do update set
-              owner_id = excluded.owner_id,
               brand_id = excluded.brand_id,
               payload = excluded.payload,
               updated_at = now()
+            where records.owner_id = excluded.owner_id
             """,
             (
                 kind,
@@ -114,7 +126,12 @@ def _upsert_record(kind: str, payload: dict[str, Any], *, owner_id: str) -> dict
         return payload
 
     directory = KIND_DIRS[kind]
-    return _write_json(_safe_json_path(directory, item_id, label=f"{kind}_id"), payload)
+    path = _safe_json_path(directory, item_id, label=f"{kind}_id")
+    if path.exists():
+        existing_payload = _read_json(path)
+        if existing_payload and not _owns(existing_payload, owner):
+            raise OwnershipError("Record belongs to another user.")
+    return _write_json(path, payload)
 
 
 def _get_record(kind: str, item_id: str, *, owner_id: str) -> dict[str, Any] | None:

@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .ai import ai_status
+from .assets import assert_generated_owner, mark_generated_owner, resolve_generated_file
 from .auth import verify_request_identity
 from .context import reset_owner_id, set_owner_id
 from .db import using_postgres
@@ -33,6 +34,7 @@ from .storage import (
     list_catalog,
     list_content,
     list_knowledge,
+    OwnershipError,
     sanitize_id,
     save_audience,
     save_campaign,
@@ -70,7 +72,6 @@ app = FastAPI(
     title="eMarketster",
     summary="Pomelli-style Business DNA + Jasper-style multi-channel campaign studio.",
 )
-app.mount("/generated", StaticFiles(directory=str(GENERATED_DIR)), name="generated")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
@@ -79,13 +80,17 @@ async def security_middleware(request, call_next):
     path = request.url.path or "/"
     owner_token = None
 
-    # Protect all API routes with caller identity checks.
-    if path.startswith("/api/"):
+    # Protect API and generated asset routes with caller identity checks.
+    if path.startswith("/api/") or path.startswith("/generated/"):
         try:
             identity = verify_request_identity(request)
             request.state.identity = identity
             owner_token = set_owner_id(str(identity.get("sub") or "anonymous"))
-            enforce_expensive_rate_limit(request, identity_sub=str(identity.get("sub") or "anonymous"))
+            if path.startswith("/api/"):
+                enforce_expensive_rate_limit(
+                    request,
+                    identity_sub=str(identity.get("sub") or "anonymous"),
+                )
         except HTTPException as exc:
             if owner_token is not None:
                 reset_owner_id(owner_token)
@@ -108,6 +113,22 @@ async def security_middleware(request, call_next):
             "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
         )
     return response
+
+
+@app.get("/generated/{asset_path:path}")
+def serve_generated(asset_path: str, request: Request) -> FileResponse:
+    identity = getattr(request.state, "identity", None) or verify_request_identity(request)
+    owner = str(identity.get("sub") or "anonymous")
+    try:
+        file_path, top_dir = resolve_generated_file(GENERATED_DIR, asset_path)
+        assert_generated_owner(top_dir, owner_id=owner)
+    except OwnershipError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Asset not found.")
+    return FileResponse(file_path)
 
 
 @app.get("/health")
@@ -365,6 +386,8 @@ def api_build_brand_dna(payload: BrandDNARequest) -> dict:
             extra_notes=payload.extra_notes,
         )
         return brand_summary(brand)
+    except OwnershipError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except Exception as exc:  # pylint: disable=broad-exception-caught
         raise HTTPException(status_code=400, detail=f"Could not build Brand DNA: {exc}") from exc
 
@@ -408,6 +431,8 @@ def api_create_catalog_item(payload: CatalogRequest) -> dict:
     _require_brand(payload.brand_id)
     try:
         item = save_catalog_item(payload.model_dump())
+    except OwnershipError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return item
@@ -490,6 +515,16 @@ def api_edit_creative(payload: CreativeEditRequest) -> dict:
     campaign = get_campaign(payload.campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found.")
+
+    campaign_dir = GENERATED_DIR / payload.campaign_id
+    try:
+        if campaign_dir.exists():
+            assert_generated_owner(campaign_dir)
+        else:
+            campaign_dir.mkdir(parents=True, exist_ok=True)
+            mark_generated_owner(campaign_dir)
+    except OwnershipError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
     platform = payload.platform_key.strip().lower()
     preset = PLATFORM_PRESETS.get(platform)

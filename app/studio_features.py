@@ -9,6 +9,7 @@ from typing import Any
 from uuid import uuid4
 
 from .ai import ai_status, chat_json, chat_text, generate_image_bytes, save_data_url_image
+from .assets import mark_generated_owner
 from .content_engine import create_marketing_video, render_marketing_image
 from .storage import save_brand, save_content, update_brand
 
@@ -290,6 +291,7 @@ h1,h2{{font-family:Helvetica,Arial,sans-serif}}
     book_id = f"brandbook-{uuid4().hex[:8]}"
     out_dir = output_root / book_id
     out_dir.mkdir(parents=True, exist_ok=True)
+    mark_generated_owner(out_dir)
     html_path = out_dir / "brand-book.html"
     html_path.write_text(html, encoding="utf-8")
     md = (
@@ -330,8 +332,10 @@ def generate_photoshoot(
 ) -> dict[str, Any]:
     count = max(1, min(4, int(count)))
     shoot_id = f"photoshoot-{uuid4().hex[:8]}"
-    shoot_dir = output_root / shoot_id / "images"
+    shoot_root = output_root / shoot_id
+    shoot_dir = shoot_root / "images"
     shoot_dir.mkdir(parents=True, exist_ok=True)
+    mark_generated_owner(shoot_root)
     images = []
     palette = brand.get("palette") or {}
     for index in range(count):
@@ -416,6 +420,7 @@ def generate_mini_website(brand: dict[str, Any], output_root: Path) -> dict[str,
     site_id = f"site-{uuid4().hex[:8]}"
     site_dir = output_root / site_id
     site_dir.mkdir(parents=True, exist_ok=True)
+    mark_generated_owner(site_dir)
     palette = brand.get("palette") or {}
     name = _safe_text(brand.get("name"))
     tagline = _safe_text(brand.get("tagline"))

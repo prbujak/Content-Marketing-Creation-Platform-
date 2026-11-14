@@ -12,6 +12,7 @@ from uuid import uuid4
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from .ai import ai_campaign_ideas, ai_channel_copy, ai_image_prompt, ai_status, generate_image_bytes, save_data_url_image
+from .assets import mark_generated_owner
 from .storage import save_campaign
 
 
@@ -590,6 +591,7 @@ def build_branded_campaign(
     video_dir = campaign_dir / "videos"
     for directory in (copy_dir, image_dir, video_dir):
         directory.mkdir(parents=True, exist_ok=True)
+    mark_generated_owner(campaign_dir)
 
     selected_platforms = [key for key in platforms if key in PLATFORM_PRESETS] or list(PLATFORM_PRESETS.keys())
     duration = max(8, min(12, int(clip_duration)))

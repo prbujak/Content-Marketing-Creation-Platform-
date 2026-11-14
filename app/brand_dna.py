@@ -18,6 +18,7 @@ from bs4 import BeautifulSoup
 from PIL import Image
 
 from .ai import enrich_brand_voice
+from .assets import mark_generated_owner
 from .storage import save_brand, save_catalog_item
 
 
@@ -528,6 +529,7 @@ def build_brand_dna(
     brand_dir = asset_root / brand_id
     image_dir = brand_dir / "images"
     image_dir.mkdir(parents=True, exist_ok=True)
+    mark_generated_owner(brand_dir)
 
     website_url = assert_public_http_url(website_url)
     fetched = fetch_public_url(website_url, timeout=25, max_bytes=MAX_PAGE_BYTES)
