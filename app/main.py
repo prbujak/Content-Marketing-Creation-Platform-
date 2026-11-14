@@ -112,10 +112,21 @@ async def security_middleware(request, call_next):
 
 @app.get("/health")
 def health() -> dict:
+    ffmpeg_ok = bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
+    writable = True
+    try:
+        probe = GENERATED_DIR / ".healthwrite"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+    except Exception:
+        writable = False
+    ready = ffmpeg_ok and writable
     return {
-        "ok": True,
+        "ok": ready,
         "service": "emarketster",
         "storage": "postgres" if using_postgres() else "filesystem",
+        "ffmpeg": ffmpeg_ok,
+        "writable": writable,
     }
 
 
@@ -688,12 +699,21 @@ def api_localize(payload: LocalizeRequest) -> dict:
             "family": "localization",
             "language": payload.language,
             "title": f"Localized to {payload.language}",
-            "body": localized,
+            "body": localized["text"],
             "summary": text[:160],
-            "extras": {"source_language": "original"},
+            "extras": {
+                "source_language": "original",
+                "fallback": bool(localized.get("fallback")),
+            },
+            "ai": ai_status(),
         }
     )
-    return {"localized": localized, "item": item}
+    return {
+        "localized": localized["text"],
+        "fallback": bool(localized.get("fallback")),
+        "item": item,
+        "ai": ai_status(),
+    }
 
 
 @app.post("/api/social-calendar")

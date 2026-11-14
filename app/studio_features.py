@@ -98,6 +98,14 @@ def instant_magic(
     if not app:
         raise ValueError("Unknown content app.")
 
+    if app_key == "social_calendar":
+        return build_social_calendar(
+            brand=brand,
+            campaign_title=(product or {}).get("name") or f"{brand.get('name', 'Brand')} Calendar",
+            brief=brief or brand.get("description") or "",
+            days=7,
+        )
+
     result = chat_json(
         system=(
             "You are Jasper Instant Magic. Generate one on-brand content asset. "
@@ -149,7 +157,7 @@ def instant_magic(
     return save_content(payload)
 
 
-def localize_text(text: str, language: str, brand: dict[str, Any]) -> str:
+def localize_text(text: str, language: str, brand: dict[str, Any]) -> dict[str, Any]:
     translated = chat_text(
         system=(
             "Localize marketing copy with cultural nuance (not literal translation). "
@@ -159,7 +167,9 @@ def localize_text(text: str, language: str, brand: dict[str, Any]) -> str:
         temperature=0.4,
         max_tokens=1800,
     )
-    return translated or text
+    if translated:
+        return {"text": translated, "fallback": False}
+    return {"text": text, "fallback": True}
 
 
 def build_social_calendar(

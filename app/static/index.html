@@ -206,8 +206,15 @@
               <button type="submit" class="btn primary" id="generate-btn">Generate Campaign Pack</button>
             </div>
           </form>
+          <div class="composer" id="campaign-history-panel">
+            <h3>Recent campaigns</h3>
+            <p class="muted">Reopen a saved pack for this brand.</p>
+            <div id="campaign-history" class="catalog-list"></div>
+          </div>
           <div id="channel-pack" class="channel-pack hidden"></div>
-          <div id="results-container" class="results-grid"></div>
+          <div id="results-container" class="results-grid">
+            <p class="muted" id="results-empty">Select channels and generate a campaign pack to see creatives here.</p>
+          </div>
         </section>
       </section>
 

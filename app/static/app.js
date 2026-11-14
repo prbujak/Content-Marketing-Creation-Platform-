@@ -63,22 +63,47 @@ function setBusy(button, busy, busyLabel = "Working…") {
   }
 }
 
+function formatApiDetail(detail, status) {
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail.map((item) => {
+      if (typeof item === "string") return item;
+      if (item?.msg) return item.msg;
+      return JSON.stringify(item);
+    });
+    if (parts.length) return parts.join("; ");
+  }
+  if (detail && typeof detail === "object") return JSON.stringify(detail);
+  return `Request failed (${status})`;
+}
+
 async function apiFetch(url, options = {}) {
-  const response = await fetch(url, options);
-  let data = null;
-  const contentType = response.headers.get("content-type") || "";
-  if (contentType.includes("application/json")) {
-    data = await response.json();
-  } else {
-    data = { detail: await response.text() };
-  }
-  if (!response.ok) {
-    const detail = data?.detail || data?.message || `Request failed (${response.status})`;
-    const error = new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
-    error.status = response.status;
+  const controller = new AbortController();
+  const timeoutMs = options.timeoutMs ?? 180000;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    let data = null;
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      data = await response.json();
+    } else {
+      data = { detail: await response.text() };
+    }
+    if (!response.ok) {
+      const error = new Error(formatApiDetail(data?.detail || data?.message, response.status));
+      error.status = response.status;
+      throw error;
+    }
+    return data;
+  } catch (error) {
+    if (error.name === "AbortError") {
+      throw new Error("Request timed out. Try again with a shorter brief or fewer channels.");
+    }
     throw error;
+  } finally {
+    clearTimeout(timer);
   }
-  return data;
 }
 
 function renderUser(me) {
@@ -236,6 +261,7 @@ function renderBrand(brand) {
   loadAudiences(brand.id);
   loadKnowledge(brand.id);
   loadLibrary(brand.id);
+  loadCampaigns(brand.id);
 }
 
 function renderSimpleList(container, items, emptyText, onClick) {
@@ -370,14 +396,22 @@ function renderResults(payload) {
   renderChannelPack(payload.channels || {});
   if (payload.ai) renderAiStatus(payload.ai);
   resultsContainer.innerHTML = "";
-  (payload.results || []).forEach((item) => {
+  const results = payload.results || [];
+  if (!results.length) {
+    resultsContainer.innerHTML =
+      `<p class="muted" id="results-empty">Select channels and generate a campaign pack to see creatives here.</p>`;
+    return;
+  }
+  results.forEach((item) => {
     const card = document.createElement("article");
     card.className = "result-card";
+    const errors = (item.errors || []).filter(Boolean);
     card.innerHTML = `
       <h3>${escapeHtml(item.platform_label)}</h3>
       <pre>${escapeHtml(item.copy || "")}</pre>
       ${item.image_url ? `<img class="asset" src="${item.image_url}" alt="${escapeHtml(item.platform_label)}" />` : ""}
       ${item.video_url ? `<video class="asset" controls src="${item.video_url}"></video>` : ""}
+      ${errors.length ? `<p class="error-text">${escapeHtml(errors.join(" · "))}</p>` : ""}
       <div class="links">
         <a href="${item.copy_url}" target="_blank" rel="noopener">Copy</a>
         ${item.image_url ? `<a href="${item.image_url}" target="_blank" rel="noopener">Image</a>` : ""}
@@ -388,6 +422,42 @@ function renderResults(payload) {
     card.querySelector(".edit-btn").addEventListener("click", () => openEditor(item));
     resultsContainer.appendChild(card);
   });
+}
+
+function renderCampaignHistory(campaigns = []) {
+  const container = document.getElementById("campaign-history");
+  if (!container) return;
+  container.innerHTML = "";
+  if (!campaigns.length) {
+    container.innerHTML = `<p class="muted">No saved campaigns yet.</p>`;
+    return;
+  }
+  campaigns.slice(0, 8).forEach((campaign) => {
+    const node = document.createElement("article");
+    node.className = "catalog-item";
+    node.innerHTML = `
+      <strong>${escapeHtml(campaign.title || campaign.campaign_title || campaign.id)}</strong>
+      <div class="muted">${escapeHtml((campaign.brief || "").slice(0, 140))}</div>
+      <div class="muted">${escapeHtml(campaign.id || campaign.campaign_id || "")}</div>
+    `;
+    node.addEventListener("click", async () => {
+      try {
+        const full = await apiFetch(`/api/campaigns/${encodeURIComponent(campaign.id || campaign.campaign_id)}`);
+        renderResults(full);
+        setStep(3);
+        setStatus(`Restored campaign ${(full.title || full.campaign_title || full.id)}.`);
+      } catch (error) {
+        setStatus(`Campaign restore error: ${error.message}`, true);
+      }
+    });
+    container.appendChild(node);
+  });
+}
+
+async function loadCampaigns(brandId) {
+  if (!brandId) return renderCampaignHistory([]);
+  const data = await apiFetch(`/api/campaigns?brand_id=${encodeURIComponent(brandId)}`);
+  renderCampaignHistory(data.campaigns || []);
 }
 
 function renderMagicItem(item) {
@@ -425,11 +495,22 @@ function renderLibrary(items = []) {
       <p class="muted">${escapeHtml(item.summary || "")}</p>
       <pre>${escapeHtml((item.body || "").slice(0, 500))}</pre>
       <div class="links">
+        <button type="button" class="btn ghost open-detail">Open</button>
         ${extras.html_url ? `<a href="${extras.html_url}" target="_blank" rel="noopener">HTML</a>` : ""}
         ${extras.site_url ? `<a href="${extras.site_url}" target="_blank" rel="noopener">Website</a>` : ""}
         ${extras.video_url ? `<a href="${extras.video_url}" target="_blank" rel="noopener">Video</a>` : ""}
       </div>
     `;
+    card.querySelector(".open-detail").addEventListener("click", async () => {
+      try {
+        const full = await apiFetch(`/api/content-library/${encodeURIComponent(item.id)}`);
+        renderMagicItem(full);
+        showPanel("magic");
+        setStatus(`Opened ${full.title || full.app_label || "library item"}.`);
+      } catch (error) {
+        setStatus(`Library error: ${error.message}`, true);
+      }
+    });
     libraryList.appendChild(card);
   });
 }
@@ -593,6 +674,7 @@ async function generateCampaign(event) {
   try {
     const payload = await apiFetch("/api/campaigns/generate", { method: "POST", body: formData });
     renderResults(payload);
+    await loadCampaigns(state.brand.id);
     setStatus(`Campaign ${payload.campaign_id} ready.`);
   } catch (error) {
     setStatus(`Generation failed: ${error.message}`, true);
@@ -829,7 +911,11 @@ document.getElementById("localize-form").addEventListener("submit", async (event
     });
     renderMagicItem(data.item);
     await loadLibrary(state.brand.id);
-    setStatus("Localization ready.");
+    if (data.fallback) {
+      setStatus("Localization used the original text (sample/fallback mode).", true);
+    } else {
+      setStatus("Localization ready.");
+    }
   } catch (error) {
     setStatus(`Localize error: ${error.message}`, true);
   }
@@ -839,6 +925,12 @@ document.getElementById("localize-form").addEventListener("submit", async (event
   try {
     await Promise.all([loadMe(), loadPlatforms(), loadAiStatus(), loadApps()]);
     await loadExistingBrand();
+    if (agentChat && !agentChat.children.length) {
+      appendChat(
+        "agent",
+        "Ask me to refine voice, CTA, values, or positioning. Example: “Make the voice more premium and shorten the CTA.”"
+      );
+    }
     showPanel("studio");
     setStatus("Ready. Extract Brand DNA or switch into an existing brand.");
   } catch (error) {
