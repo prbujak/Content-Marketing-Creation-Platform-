@@ -1,12 +1,17 @@
 const state = {
   brand: null,
+  brands: [],
   selectedIdea: null,
   platforms: [],
   campaign: null,
   editing: null,
   ai: null,
   apps: [],
+  audiences: [],
+  me: null,
 };
+
+const BRAND_STORAGE_KEY = "emarketster.activeBrandId";
 
 const statusBox = document.getElementById("status-box");
 const dnaForm = document.getElementById("dna-form");
@@ -44,6 +49,82 @@ function escapeHtml(raw = "") {
     .replaceAll("'", "&#39;");
 }
 
+function setBusy(button, busy, busyLabel = "Working…") {
+  if (!button) return;
+  if (busy) {
+    if (!button.dataset.idleLabel) button.dataset.idleLabel = button.textContent;
+    button.textContent = busyLabel;
+    button.classList.add("busy");
+    button.disabled = true;
+  } else {
+    button.textContent = button.dataset.idleLabel || button.textContent;
+    button.classList.remove("busy");
+    button.disabled = false;
+  }
+}
+
+async function apiFetch(url, options = {}) {
+  const response = await fetch(url, options);
+  let data = null;
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    data = await response.json();
+  } else {
+    data = { detail: await response.text() };
+  }
+  if (!response.ok) {
+    const detail = data?.detail || data?.message || `Request failed (${response.status})`;
+    const error = new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+    error.status = response.status;
+    throw error;
+  }
+  return data;
+}
+
+function renderUser(me) {
+  state.me = me;
+  const chip = document.getElementById("user-chip");
+  if (!chip) return;
+  if (!me?.authenticated) {
+    chip.textContent = "Not signed in";
+    return;
+  }
+  const mode = me.simulated ? "local" : "signed in";
+  const storage = me.storage === "postgres" ? " · durable DB" : "";
+  chip.textContent = `${me.name || me.email || "User"} · ${mode}${storage}`;
+  chip.title = me.email || "";
+}
+
+function renderBrandSwitcher(brands = []) {
+  state.brands = brands;
+  const wrap = document.getElementById("brand-switcher-wrap");
+  const select = document.getElementById("brand-switcher");
+  if (!wrap || !select) return;
+  if (!brands.length) {
+    wrap.classList.add("hidden");
+    select.innerHTML = "";
+    return;
+  }
+  wrap.classList.remove("hidden");
+  select.innerHTML = brands
+    .map((brand) => `<option value="${escapeHtml(brand.id)}">${escapeHtml(brand.name || brand.id)}</option>`)
+    .join("");
+  if (state.brand?.id) select.value = state.brand.id;
+}
+
+function renderAudienceOptions(items = []) {
+  state.audiences = items;
+  const select = document.getElementById("magic-audience");
+  if (!select) return;
+  const current = select.value;
+  select.innerHTML =
+    `<option value="">No audience filter</option>` +
+    items
+      .map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name || item.id)}</option>`)
+      .join("");
+  if (current && items.some((item) => item.id === current)) select.value = current;
+}
+
 function requireBrand() {
   if (!state.brand?.id) {
     setStatus("Build Brand DNA first.", true);
@@ -78,7 +159,8 @@ function renderAiStatus(status) {
   aiStatusBox.classList.remove("live", "sample");
   if (status?.enabled) {
     aiStatusBox.classList.add("live");
-    aiStatusBox.textContent = `OpenRouter live · text ${status.text_model} · image ${status.image_model}`;
+    const err = status.last_error ? ` · last issue: ${status.last_error}` : "";
+    aiStatusBox.textContent = `OpenRouter live · text ${status.text_model} · image ${status.image_model}${err}`;
   } else {
     aiStatusBox.classList.add("sample");
     aiStatusBox.textContent =
@@ -185,6 +267,7 @@ function renderCatalog(items = []) {
 }
 
 function renderAudiences(items = []) {
+  renderAudienceOptions(items);
   renderSimpleList(document.getElementById("audience-list"), items, "No audiences yet.", (item) => {
     document.getElementById("magic-audience").value = item.id || "";
     setStatus(`Audience selected: ${item.name}`);
@@ -352,20 +435,20 @@ function renderLibrary(items = []) {
 }
 
 async function loadPlatforms() {
-  const response = await fetch("/api/platforms");
-  const data = await response.json();
+  const data = await apiFetch("/api/platforms");
   renderPlatforms(data.platforms || []);
 }
 
 async function loadAiStatus() {
-  const response = await fetch("/api/ai-status");
-  if (response.ok) renderAiStatus(await response.json());
+  try {
+    renderAiStatus(await apiFetch("/api/ai-status"));
+  } catch (_) {
+    /* non-blocking */
+  }
 }
 
 async function loadApps() {
-  const response = await fetch("/api/content-apps");
-  if (!response.ok) return;
-  const data = await response.json();
+  const data = await apiFetch("/api/content-apps");
   state.apps = data.apps || [];
   const select = document.getElementById("magic-app");
   select.innerHTML = state.apps
@@ -373,63 +456,79 @@ async function loadApps() {
     .join("");
 }
 
+async function loadMe() {
+  try {
+    renderUser(await apiFetch("/api/me"));
+  } catch (_) {
+    renderUser({ authenticated: false });
+  }
+}
+
 async function loadCatalog(brandId) {
   if (!brandId) return renderCatalog([]);
-  const response = await fetch(`/api/catalog?brand_id=${encodeURIComponent(brandId)}`);
-  if (response.ok) renderCatalog((await response.json()).items || []);
+  const data = await apiFetch(`/api/catalog?brand_id=${encodeURIComponent(brandId)}`);
+  renderCatalog(data.items || []);
 }
 
 async function loadAudiences(brandId) {
   if (!brandId) return renderAudiences([]);
-  const response = await fetch(`/api/audiences?brand_id=${encodeURIComponent(brandId)}`);
-  if (response.ok) renderAudiences((await response.json()).audiences || []);
+  const data = await apiFetch(`/api/audiences?brand_id=${encodeURIComponent(brandId)}`);
+  renderAudiences(data.audiences || []);
 }
 
 async function loadKnowledge(brandId) {
   if (!brandId) return renderKnowledge([]);
-  const response = await fetch(`/api/knowledge?brand_id=${encodeURIComponent(brandId)}`);
-  if (response.ok) renderKnowledge((await response.json()).items || []);
+  const data = await apiFetch(`/api/knowledge?brand_id=${encodeURIComponent(brandId)}`);
+  renderKnowledge(data.items || []);
 }
 
 async function loadLibrary(brandId) {
   if (!brandId) return renderLibrary([]);
-  const response = await fetch(`/api/content-library?brand_id=${encodeURIComponent(brandId)}`);
-  if (response.ok) renderLibrary((await response.json()).items || []);
+  const data = await apiFetch(`/api/content-library?brand_id=${encodeURIComponent(brandId)}`);
+  renderLibrary(data.items || []);
+}
+
+async function selectBrandById(brandId) {
+  if (!brandId) return;
+  const brand = await apiFetch(`/api/brands/${encodeURIComponent(brandId)}`);
+  renderBrand(brand);
+  localStorage.setItem(BRAND_STORAGE_KEY, brand.id);
+  const switcher = document.getElementById("brand-switcher");
+  if (switcher) switcher.value = brand.id;
+  setStatus(`Active brand: ${brand.name}.`);
 }
 
 async function loadExistingBrand() {
-  const response = await fetch("/api/brands");
-  if (!response.ok) return;
-  const brands = (await response.json()).brands || [];
-  if (brands[0]) {
-    renderBrand(brands[0]);
-    setStatus(`Loaded Brand DNA for ${brands[0].name}.`);
-  }
+  const data = await apiFetch("/api/brands");
+  const brands = data.brands || [];
+  renderBrandSwitcher(brands);
+  if (!brands.length) return;
+  const remembered = localStorage.getItem(BRAND_STORAGE_KEY);
+  const chosen = brands.find((item) => item.id === remembered) || brands[0];
+  await selectBrandById(chosen.id);
 }
 
 async function buildBrandDNA(event) {
   event.preventDefault();
-  dnaBtn.disabled = true;
+  setBusy(dnaBtn, true, "Extracting…");
   setStatus("Extracting Business DNA...");
   try {
-    const response = await fetch("/api/brand-dna", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        website_url: document.getElementById("website-url").value.trim(),
-        brand_name: document.getElementById("brand-name").value.trim(),
-        extra_notes: document.getElementById("extra-notes").value.trim(),
-      }),
+    const data = await postJson("/api/brand-dna", {
+      website_url: document.getElementById("website-url").value.trim(),
+      brand_name: document.getElementById("brand-name").value.trim(),
+      extra_notes: document.getElementById("extra-notes").value.trim(),
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || "Brand DNA failed");
+    const brands = await apiFetch("/api/brands");
+    renderBrandSwitcher(brands.brands || []);
     renderBrand(data);
+    localStorage.setItem(BRAND_STORAGE_KEY, data.id);
+    if (data.ai) renderAiStatus(data.ai);
     setStep(2);
     setStatus(`Brand DNA ready for ${data.name}.`);
   } catch (error) {
     setStatus(`Brand DNA error: ${error.message}`, true);
   } finally {
-    dnaBtn.disabled = false;
+    setBusy(dnaBtn, false);
   }
 }
 
@@ -437,53 +536,41 @@ async function addCatalogItem(event) {
   event.preventDefault();
   if (!requireBrand()) return;
   const button = document.getElementById("catalog-btn");
-  button.disabled = true;
+  setBusy(button, true, "Saving…");
   try {
-    const response = await fetch("/api/catalog", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        brand_id: state.brand.id,
-        name: document.getElementById("catalog-name").value.trim(),
-        description: document.getElementById("catalog-description").value.trim(),
-        source_url: document.getElementById("catalog-url").value.trim(),
-      }),
+    const data = await postJson("/api/catalog", {
+      brand_id: state.brand.id,
+      name: document.getElementById("catalog-name").value.trim(),
+      description: document.getElementById("catalog-description").value.trim(),
+      source_url: document.getElementById("catalog-url").value.trim(),
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || "Catalog save failed");
     catalogForm.reset();
     await loadCatalog(state.brand.id);
     setStatus(`Added catalog item “${data.name}”.`);
   } catch (error) {
     setStatus(`Catalog error: ${error.message}`, true);
   } finally {
-    button.disabled = false;
+    setBusy(button, false);
   }
 }
 
 async function buildIdeas(event) {
   event.preventDefault();
   if (!requireBrand()) return;
-  ideasBtn.disabled = true;
+  setBusy(ideasBtn, true, "Generating…");
   setStatus("Generating campaign ideas...");
   try {
-    const response = await fetch("/api/campaign-ideas", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        brand_id: state.brand.id,
-        product_name: document.getElementById("product-name").value.trim(),
-        custom_prompt: document.getElementById("custom-prompt").value.trim(),
-      }),
+    const data = await postJson("/api/campaign-ideas", {
+      brand_id: state.brand.id,
+      product_name: document.getElementById("product-name").value.trim(),
+      custom_prompt: document.getElementById("custom-prompt").value.trim(),
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || "Idea generation failed");
     renderIdeas(data.ideas || []);
     setStatus(`Generated ${(data.ideas || []).length} ideas.`);
   } catch (error) {
     setStatus(`Ideas error: ${error.message}`, true);
   } finally {
-    ideasBtn.disabled = false;
+    setBusy(ideasBtn, false);
   }
 }
 
@@ -501,47 +588,39 @@ async function generateCampaign(event) {
     formData.set("idea_objective", state.selectedIdea.objective || "");
     formData.set("idea_channels", state.selectedIdea.channels || "");
   }
-  generateBtn.disabled = true;
+  setBusy(generateBtn, true, "Generating…");
   setStatus("Generating campaign pack...");
   try {
-    const response = await fetch("/api/campaigns/generate", { method: "POST", body: formData });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.detail || "Campaign generation failed");
+    const payload = await apiFetch("/api/campaigns/generate", { method: "POST", body: formData });
     renderResults(payload);
     setStatus(`Campaign ${payload.campaign_id} ready.`);
   } catch (error) {
     setStatus(`Generation failed: ${error.message}`, true);
   } finally {
-    generateBtn.disabled = false;
+    setBusy(generateBtn, false);
   }
 }
 
 async function saveEditor() {
   if (!state.editing || !state.campaign?.campaign_id) return;
   const saveBtn = document.getElementById("editor-save");
-  saveBtn.disabled = true;
+  setBusy(saveBtn, true, "Saving…");
   try {
-    const response = await fetch("/api/creatives/edit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        campaign_id: state.campaign.campaign_id,
-        platform_key: state.editing.platform_key,
-        headline: document.getElementById("editor-headline").value.trim(),
-        body: document.getElementById("editor-body").value.trim(),
-        cta: document.getElementById("editor-cta").value.trim(),
-        regenerate_ai_image: document.getElementById("editor-regen-image").checked,
-      }),
+    const data = await postJson("/api/creatives/edit", {
+      campaign_id: state.campaign.campaign_id,
+      platform_key: state.editing.platform_key,
+      headline: document.getElementById("editor-headline").value.trim(),
+      body: document.getElementById("editor-body").value.trim(),
+      cta: document.getElementById("editor-cta").value.trim(),
+      regenerate_ai_image: document.getElementById("editor-regen-image").checked,
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || "Edit failed");
     renderResults(data.campaign);
     closeEditor();
     setStatus(`Updated ${data.result.platform_label}.`);
   } catch (error) {
     setStatus(`Editor error: ${error.message}`, true);
   } finally {
-    saveBtn.disabled = false;
+    setBusy(saveBtn, false);
   }
 }
 
@@ -553,13 +632,7 @@ async function sendBrandAgent(event) {
   document.getElementById("agent-message").value = "";
   setStatus("Brand Agent thinking...");
   try {
-    const response = await fetch("/api/brand-agent", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ brand_id: state.brand.id, message }),
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || "Brand Agent failed");
+    const data = await postJson("/api/brand-agent", { brand_id: state.brand.id, message });
     appendChat("agent", data.reply || "Updated.");
     if (data.brand) renderBrand(data.brand);
     setStatus(`Brand Agent updated: ${(data.changed_fields || []).join(", ") || "no fields"}`);
@@ -573,17 +646,11 @@ async function saveKnowledge(event) {
   event.preventDefault();
   if (!requireBrand()) return;
   try {
-    const response = await fetch("/api/knowledge", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        brand_id: state.brand.id,
-        title: document.getElementById("knowledge-title").value.trim(),
-        body: document.getElementById("knowledge-body").value.trim(),
-      }),
+    const data = await postJson("/api/knowledge", {
+      brand_id: state.brand.id,
+      title: document.getElementById("knowledge-title").value.trim(),
+      body: document.getElementById("knowledge-body").value.trim(),
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || "Knowledge save failed");
     document.getElementById("knowledge-form").reset();
     await loadKnowledge(state.brand.id);
     setStatus(`Saved knowledge “${data.title}”.`);
@@ -596,20 +663,14 @@ async function saveAudience(event) {
   event.preventDefault();
   if (!requireBrand()) return;
   try {
-    const response = await fetch("/api/audiences", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        brand_id: state.brand.id,
-        name: document.getElementById("audience-name").value.trim(),
-        description: document.getElementById("audience-description").value.trim(),
-        pains: document.getElementById("audience-pains").value.trim(),
-        desires: document.getElementById("audience-desires").value.trim(),
-        channels: document.getElementById("audience-channels").value.trim(),
-      }),
+    const data = await postJson("/api/audiences", {
+      brand_id: state.brand.id,
+      name: document.getElementById("audience-name").value.trim(),
+      description: document.getElementById("audience-description").value.trim(),
+      pains: document.getElementById("audience-pains").value.trim(),
+      desires: document.getElementById("audience-desires").value.trim(),
+      channels: document.getElementById("audience-channels").value.trim(),
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || "Audience save failed");
     document.getElementById("audience-form").reset();
     await loadAudiences(state.brand.id);
     setStatus(`Saved audience “${data.name}”.`);
@@ -621,39 +682,35 @@ async function saveAudience(event) {
 async function runInstantMagic(event) {
   event.preventDefault();
   if (!requireBrand()) return;
+  const button = event.submitter || event.target.querySelector("button[type='submit']");
+  setBusy(button, true, "Generating…");
   setStatus("Running Instant Magic...");
   try {
-    const response = await fetch("/api/instant-magic", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        brand_id: state.brand.id,
-        app_key: document.getElementById("magic-app").value,
-        brief: document.getElementById("magic-brief").value.trim(),
-        audience_id: document.getElementById("magic-audience").value.trim(),
-        product_name: document.getElementById("magic-product").value.trim(),
-        language: document.getElementById("magic-language").value.trim() || "English",
-      }),
+    const data = await postJson("/api/instant-magic", {
+      brand_id: state.brand.id,
+      app_key: document.getElementById("magic-app").value,
+      brief: document.getElementById("magic-brief").value.trim(),
+      audience_id: document.getElementById("magic-audience").value.trim(),
+      product_name: document.getElementById("magic-product").value.trim(),
+      language: document.getElementById("magic-language").value.trim() || "English",
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || "Instant Magic failed");
     renderMagicItem(data);
     await loadLibrary(state.brand.id);
+    if (data.ai) renderAiStatus(data.ai);
     setStatus(`Created ${data.app_label}: ${data.title}`);
   } catch (error) {
     setStatus(`Instant Magic error: ${error.message}`, true);
+  } finally {
+    setBusy(button, false);
   }
 }
 
 async function postJson(url, body) {
-  const response = await fetch(url, {
+  return apiFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.detail || "Request failed");
-  return data;
 }
 
 document.querySelectorAll(".step").forEach((button) => {
@@ -685,6 +742,13 @@ document.getElementById("editor-close").addEventListener("click", closeEditor);
 document.getElementById("editor-save").addEventListener("click", saveEditor);
 document.getElementById("refresh-library").addEventListener("click", () => {
   if (requireBrand()) loadLibrary(state.brand.id);
+});
+document.getElementById("brand-switcher")?.addEventListener("change", async (event) => {
+  try {
+    await selectBrandById(event.target.value);
+  } catch (error) {
+    setStatus(`Brand switch error: ${error.message}`, true);
+  }
 });
 editorModal.addEventListener("click", (event) => {
   if (event.target === editorModal) closeEditor();
@@ -773,9 +837,10 @@ document.getElementById("localize-form").addEventListener("submit", async (event
 
 (async function boot() {
   try {
-    await Promise.all([loadPlatforms(), loadAiStatus(), loadApps()]);
+    await Promise.all([loadMe(), loadPlatforms(), loadAiStatus(), loadApps()]);
     await loadExistingBrand();
     showPanel("studio");
+    setStatus("Ready. Extract Brand DNA or switch into an existing brand.");
   } catch (error) {
     setStatus(`Startup error: ${error.message}`, true);
   }

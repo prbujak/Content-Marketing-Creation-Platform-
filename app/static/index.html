@@ -24,6 +24,13 @@
         <a href="#magic" data-panel="magic">Instant Magic</a>
         <a href="#library" data-panel="library">Library</a>
       </nav>
+      <div class="topbar-meta">
+        <label class="brand-switcher hidden" id="brand-switcher-wrap">
+          <span class="sr-only">Active brand</span>
+          <select id="brand-switcher" aria-label="Active brand"></select>
+        </label>
+        <div id="user-chip" class="user-chip" aria-live="polite">Signing in…</div>
+      </div>
     </header>
 
     <main id="top">
@@ -291,8 +298,10 @@
           </div>
           <div class="split">
             <label>
-              Audience ID (optional)
-              <input id="magic-audience" type="text" placeholder="aud-..." />
+              Audience (optional)
+              <select id="magic-audience">
+                <option value="">No audience filter</option>
+              </select>
             </label>
             <label>
               Product focus

@@ -12,6 +12,8 @@ from pydantic import BaseModel, Field
 
 from .ai import ai_status
 from .auth import verify_request_identity
+from .context import reset_owner_id, set_owner_id
+from .db import using_postgres
 from .rate_limit import enforce_expensive_rate_limit
 from .brand_dna import brand_summary, build_brand_dna
 from .content_engine import (
@@ -75,17 +77,29 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 @app.middleware("http")
 async def security_middleware(request, call_next):
     path = request.url.path or "/"
+    owner_token = None
 
     # Protect all API routes with caller identity checks.
     if path.startswith("/api/"):
         try:
             identity = verify_request_identity(request)
             request.state.identity = identity
+            owner_token = set_owner_id(str(identity.get("sub") or "anonymous"))
             enforce_expensive_rate_limit(request, identity_sub=str(identity.get("sub") or "anonymous"))
         except HTTPException as exc:
+            if owner_token is not None:
+                reset_owner_id(owner_token)
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    finally:
+        if owner_token is not None:
+            reset_owner_id(owner_token)
+
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("X-Frame-Options", "DENY")
 
     # Harden generated HTML exports at the response layer too.
     if path.startswith("/generated/") and (path.endswith(".html") or path.endswith("/")):
@@ -93,9 +107,16 @@ async def security_middleware(request, call_next):
             "default-src 'none'; style-src 'unsafe-inline'; img-src data: https:; "
             "base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
         )
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["Referrer-Policy"] = "no-referrer"
     return response
+
+
+@app.get("/health")
+def health() -> dict:
+    return {
+        "ok": True,
+        "service": "emarketster",
+        "storage": "postgres" if using_postgres() else "filesystem",
+    }
 
 
 @app.get("/api/me")
@@ -107,6 +128,7 @@ def api_me(request: Request) -> dict:
         "name": identity.get("name") or "",
         "email": identity.get("email") or "",
         "kind": identity.get("kind") or "",
+        "storage": "postgres" if using_postgres() else "filesystem",
     }
 
 
@@ -367,7 +389,7 @@ def api_list_catalog(brand_id: str | None = None) -> dict:
             brand_id = sanitize_id(brand_id, label="brand_id")
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"items": list_catalog(brand_id)}
+    return {"items": list_catalog(brand_id=brand_id)}
 
 
 @app.post("/api/catalog")
@@ -387,7 +409,7 @@ def api_list_campaigns(brand_id: str | None = None) -> dict:
             brand_id = sanitize_id(brand_id, label="brand_id")
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"campaigns": list_campaigns(brand_id)}
+    return {"campaigns": list_campaigns(brand_id=brand_id)}
 
 
 @app.get("/api/campaigns/{campaign_id}")
@@ -554,7 +576,7 @@ def api_list_audiences(brand_id: str | None = None) -> dict:
             brand_id = sanitize_id(brand_id, label="brand_id")
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"audiences": list_audiences(brand_id)}
+    return {"audiences": list_audiences(brand_id=brand_id)}
 
 
 @app.post("/api/audiences")
@@ -573,7 +595,7 @@ def api_list_knowledge(brand_id: str | None = None) -> dict:
             brand_id = sanitize_id(brand_id, label="brand_id")
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"items": list_knowledge(brand_id)}
+    return {"items": list_knowledge(brand_id=brand_id)}
 
 
 @app.post("/api/knowledge")
@@ -595,7 +617,7 @@ def api_content_library(brand_id: str | None = None) -> dict:
             brand_id = sanitize_id(brand_id, label="brand_id")
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"items": list_content(brand_id)}
+    return {"items": list_content(brand_id=brand_id)}
 
 
 @app.get("/api/content-library/{content_id}")
@@ -618,7 +640,7 @@ def api_brand_agent(payload: BrandAgentRequest) -> dict:
         raise HTTPException(status_code=400, detail="Message is required.")
     if len(message) > 4000:
         raise HTTPException(status_code=400, detail="Message too long.")
-    knowledge = list_knowledge(brand["id"])
+    knowledge = list_knowledge(brand_id=brand["id"])
     try:
         return brand_agent_turn(brand, message, knowledge=knowledge)
     except Exception as exc:  # pylint: disable=broad-exception-caught

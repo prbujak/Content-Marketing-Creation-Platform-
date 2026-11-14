@@ -23,6 +23,18 @@ DEFAULT_IMAGE_FALLBACKS = [
     "black-forest-labs/flux.2-flex",
 ]
 
+_LAST_ERROR = ""
+
+
+def _set_last_error(message: str) -> None:
+    global _LAST_ERROR
+    cleaned = " ".join(str(message or "").split())
+    # Never retain raw secrets if they somehow appear in an error string.
+    key = (os.getenv("OPENROUTER_API_KEY") or "").strip()
+    if key and key in cleaned:
+        cleaned = cleaned.replace(key, "[redacted]")
+    _LAST_ERROR = cleaned[:240]
+
 
 def ai_status() -> dict[str, Any]:
     key = (os.getenv("OPENROUTER_API_KEY") or "").strip()
@@ -39,6 +51,7 @@ def ai_status() -> dict[str, Any]:
             if key
             else "Sample mode: add OPENROUTER_API_KEY in Cursor Secrets for live multi-model generation."
         ),
+        "last_error": _LAST_ERROR,
     }
 
 
@@ -49,7 +62,7 @@ def _headers() -> dict[str, str] | None:
     return {
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://emarketster.local",
+        "HTTP-Referer": os.getenv("OPENROUTER_HTTP_REFERER", "https://emarketster.app"),
         "X-Title": "eMarketster",
     }
 
@@ -87,8 +100,10 @@ def chat_json(
             content = "".join(
                 part.get("text", "") if isinstance(part, dict) else str(part) for part in content
             )
+        _set_last_error("")
         return json.loads(content)
-    except Exception:
+    except Exception as exc:
+        _set_last_error(f"chat_json failed: {exc}")
         return None
 
 
@@ -118,12 +133,14 @@ def chat_text(
         response = requests.post(OPENROUTER_URL, headers=headers, json=payload, timeout=90)
         response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"]
+        _set_last_error("")
         if isinstance(content, list):
             return "".join(
                 part.get("text", "") if isinstance(part, dict) else str(part) for part in content
             ).strip()
         return str(content).strip()
-    except Exception:
+    except Exception as exc:
+        _set_last_error(f"chat_text failed: {exc}")
         return None
 
 
@@ -151,13 +168,17 @@ def generate_image_bytes(
         message = response.json()["choices"][0]["message"]
         images = message.get("images") or []
         if not images:
+            _set_last_error("image generation returned no images")
             return None
         data_url = images[0].get("image_url", {}).get("url") or ""
         match = re.match(r"data:image/[^;]+;base64,(.+)", data_url, flags=re.DOTALL)
         if not match:
+            _set_last_error("image generation returned an unexpected payload")
             return None
+        _set_last_error("")
         return base64.b64decode(match.group(1))
-    except Exception:
+    except Exception as exc:
+        _set_last_error(f"image generation failed: {exc}")
         return None
 
 
